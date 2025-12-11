@@ -171,13 +171,12 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Keyboard input - Only enabled on monitor 0 (or use admin panel for control)
+  // Keyboard input for snake direction (works on all monitors during game)
   useEffect(() => {
-    // Skip keyboard input on display monitors - control from admin panel only
-    // Uncomment the next line to enable keyboard control on all monitors
-    // if (monitorId !== "0") return;
-    
     const sendInput = async (direction: "up" | "down" | "left" | "right") => {
+      // Only send input if game is running
+      if (stateRef.current?.phase !== "running") return;
+      
       try {
         await fetch("/api/state/input", {
           method: "POST",
@@ -185,34 +184,61 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
           body: JSON.stringify({ direction }),
         });
       } catch (err) {
-        console.error(err);
+        console.error("Failed to send input:", err);
       }
     };
 
     const handleKey = (e: KeyboardEvent) => {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         e.preventDefault();
-        const dir = e.key.replace("Arrow", "").toLowerCase() as any;
+        const dir = e.key.replace("Arrow", "").toLowerCase() as "up" | "down" | "left" | "right";
         sendInput(dir);
       }
     };
 
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [monitorId]);
+  }, []);
 
   // Start game handler
   const handleStartGame = useCallback(async () => {
+    console.log("Starting game...");
     try {
-      await fetch("/api/state/control", {
+      const res = await fetch("/api/state/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "start" }),
       });
+      const data = await res.json();
+      console.log("Start game response:", data);
+      if (data.state) {
+        stateRef.current = data.state;
+        setIsIdle(data.state.phase === "idle");
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to start game:", err);
     }
   }, []);
+
+  // Keyboard to start game (any key on monitor 0 when idle)
+  useEffect(() => {
+    if (monitorId !== "0") return;
+    
+    const handleKeyToStart = (e: KeyboardEvent) => {
+      // Only start if game is idle
+      if (stateRef.current?.phase !== "idle" && !isIdle) return;
+      
+      // Start on Space, Enter, or any Arrow key
+      if (e.key === " " || e.key === "Enter" || e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        console.log("Starting game via keyboard:", e.key);
+        handleStartGame();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyToStart);
+    return () => window.removeEventListener("keydown", handleKeyToStart);
+  }, [monitorId, isIdle, handleStartGame]);
 
   // PIXI.js setup and render loop
   useEffect(() => {
@@ -722,15 +748,21 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     >
       {/* Start Game Overlay (only on monitor 0 when idle) */}
       {monitorId === "0" && isIdle && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md cursor-pointer"
+          onClick={handleStartGame}
+        >
           <div className="text-center animate-in p-8 max-w-2xl">
             <div className="text-9xl mb-8 animate-bounce">🐍</div>
             <h1 className="text-6xl font-bold text-white mb-4">Snake Game</h1>
             <p className="text-2xl text-slate-400 mb-12">
-              Press the button or use arrow keys to start!
+              Click anywhere or press any key to start!
             </p>
             <Button
-              onClick={handleStartGame}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStartGame();
+              }}
               variant="gradient"
               size="xl"
               className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
@@ -739,7 +771,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
               START GAME
             </Button>
             <p className="text-lg text-slate-500 mt-8">
-              ↑ ↓ ← → Arrow keys to control
+              Use ↑ ↓ ← → arrow keys to control the snake
             </p>
           </div>
         </div>
