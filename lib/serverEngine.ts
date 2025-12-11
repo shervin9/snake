@@ -83,26 +83,29 @@ interface PersistedState {
 
 function loadStateFromFile(): PersistedState | null {
   // #region agent log
-  const logLoad = (result: any) => fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:loadStateFromFile',message:'Load state from file',data:{exists:fs.existsSync(STATE_FILE),result:result?.gameState?.phase||'null',pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  console.log('[DEBUG] loadStateFromFile: entry, pid:', process.pid, 'file exists:', fs.existsSync(STATE_FILE));
   // #endregion
   try {
     if (fs.existsSync(STATE_FILE)) {
       const data = fs.readFileSync(STATE_FILE, 'utf-8');
       const parsed = JSON.parse(data);
-      logLoad(parsed);
+      // #region agent log
+      console.log('[DEBUG] loadStateFromFile: loaded phase:', parsed.gameState?.phase, 'tick:', parsed.gameState?.tick);
+      // #endregion
       return parsed;
     }
   } catch (err) {
     console.error('[ServerEngine] Failed to load state file:', err);
-    logLoad(null);
   }
-  logLoad(null);
+  // #region agent log
+  console.log('[DEBUG] loadStateFromFile: returning null');
+  // #endregion
   return null;
 }
 
 function saveStateToFile(): void {
   // #region agent log
-  const logSave = (phase: string) => fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:saveStateToFile',message:'Save state to file',data:{phase,tick:globalState.__snakeGameState?.tick,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  console.log('[DEBUG] saveStateToFile: phase:', globalState.__snakeGameState?.phase, 'tick:', globalState.__snakeGameState?.tick, 'pid:', process.pid);
   // #endregion
   try {
     const data: PersistedState = {
@@ -111,8 +114,10 @@ function saveStateToFile(): void {
       portals: globalState.__snakePortals || [],
       config: globalState.__snakeConfig!,
     };
-    logSave(data.gameState.phase);
     fs.writeFileSync(STATE_FILE, JSON.stringify(data), 'utf-8');
+    // #region agent log
+    console.log('[DEBUG] saveStateToFile: saved successfully');
+    // #endregion
   } catch (err) {
     console.error('[ServerEngine] Failed to save state file:', err);
   }
@@ -748,11 +753,20 @@ export function setupGame(
 }
 
 export function startGame(): ServerGameState {
+  const state = getState();
+  
   // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:startGame:entry',message:'startGame called',data:{pid:process.pid,currentPhase:globalState.__snakeGameState?.phase||'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  console.log('[DEBUG-START] Entry - current phase:', state.phase, 'pid:', process.pid);
   // #endregion
   
-  const state = getState();
+  // Prevent starting if already running
+  if (state.phase === "running") {
+    // #region agent log
+    console.log('[DEBUG-START] Already running, ignoring start request');
+    // #endregion
+    return { ...state };
+  }
+  
   const config = getConfig();
   const cell = config.gridCellSize;
 
@@ -796,7 +810,7 @@ export function startGame(): ServerGameState {
   saveStateToFile();
 
   // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:startGame:exit',message:'startGame exit',data:{phase:state.phase,foods:state.foods.length,monitors:monitors.length,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  console.log('[DEBUG-START] Exit - phase:', state.phase, 'foods:', state.foods.length, 'tick:', state.tick);
   // #endregion
 
   return { ...state };

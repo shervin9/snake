@@ -22,7 +22,7 @@ export async function GET() {
   const config = getGameConfig();
 
   // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/state:GET',message:'State API called',data:{phase:state.phase,tick:state.tick,foods:state.foods.length,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+  console.log('[DEBUG-API] GET /api/state - phase:', state.phase, 'tick:', state.tick, 'pid:', process.pid);
   // #endregion
 
   return NextResponse.json({
