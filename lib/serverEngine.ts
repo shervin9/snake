@@ -437,10 +437,18 @@ function checkSelfCollision(): boolean {
 function step(): void {
   const state = getState();
   const config = getConfig();
-  const monitors = getMonitors();
+  let monitors = getMonitors();
   const cell = config.gridCellSize;
 
-  if (state.phase !== "running" || monitors.length === 0) return;
+  // Auto-initialize monitors if needed (handles serverless cold starts)
+  if (monitors.length === 0) {
+    monitors = generateMonitors(config.monitorCount);
+    const portals = generatePortals(monitors);
+    globalState.__snakeMonitors = monitors;
+    globalState.__snakePortals = portals;
+  }
+
+  if (state.phase !== "running") return;
 
   state.tick += 1;
 
@@ -468,9 +476,13 @@ function step(): void {
   // Find current monitor
   const currentMonitor = locateMonitor(head);
   if (!currentMonitor) {
-    // Snake somehow outside all monitors - shouldn't happen
-    state.phase = "ended";
-    return;
+    // Snake outside all monitors - reset to monitor 0
+    console.warn("[ServerEngine] Snake outside monitors, repositioning...");
+    const start = monitorOrigin("0");
+    const startPos = snapToGrid(start.x + MONITOR_W / 2, start.y + MONITOR_H / 2, cell);
+    state.snake[0] = startPos;
+    state.activeMonitorId = "0";
+    return; // Skip this tick, will continue next tick
   }
 
   // Check for portal teleportation
@@ -658,6 +670,17 @@ export function startGame(): ServerGameState {
   const config = getConfig();
   const cell = config.gridCellSize;
 
+  // Auto-setup monitors and portals if not already configured
+  let monitors = getMonitors();
+  if (monitors.length === 0) {
+    console.log("[ServerEngine] No monitors configured, auto-generating...");
+    monitors = generateMonitors(config.monitorCount);
+    const portals = generatePortals(monitors);
+    globalState.__snakeMonitors = monitors;
+    globalState.__snakePortals = portals;
+    console.log(`[ServerEngine] Generated ${monitors.length} monitors and ${portals.length} portals`);
+  }
+
   const start = monitorOrigin("0");
   const startPos = snapToGrid(
     start.x + MONITOR_W / 2,
@@ -679,7 +702,9 @@ export function startGame(): ServerGameState {
   state.totalTimeMs = config.timerSeconds * 1000;
   state.timeLeftMs = config.timerSeconds * 1000;
 
+  // Generate foods AFTER monitors are configured
   generateInitialFoods();
+  console.log(`[ServerEngine] Game started! Foods: ${state.foods.length}, Monitors: ${monitors.length}`);
 
   return { ...state };
 }
@@ -739,6 +764,16 @@ export function setDirection(dir: Direction): ServerGameState {
 }
 
 export function getGameState(): ServerGameState {
+  // Ensure monitors are always configured (handles serverless cold starts)
+  const monitors = getMonitors();
+  if (monitors.length === 0) {
+    const config = getConfig();
+    const newMonitors = generateMonitors(config.monitorCount);
+    const newPortals = generatePortals(newMonitors);
+    globalState.__snakeMonitors = newMonitors;
+    globalState.__snakePortals = newPortals;
+  }
+  
   processTicks();
   return { ...getState() };
 }
