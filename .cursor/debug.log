@@ -1,0 +1,5 @@
+{"location":"serverEngine.ts:loadStateFromFile","message":"Load state from file","data":{"exists":true,"result":"idle","pid":50807},"timestamp":1765469283126,"sessionId":"debug-session","hypothesisId":"A"}
+{"location":"serverEngine.ts:loadStateFromFile","message":"Load state from file","data":{"exists":true,"result":"idle","pid":50810},"timestamp":1765469283175,"sessionId":"debug-session","hypothesisId":"A"}
+{"location":"serverEngine.ts:loadStateFromFile","message":"Load state from file","data":{"exists":true,"result":"idle","pid":50814},"timestamp":1765469283300,"sessionId":"debug-session","hypothesisId":"A"}
+{"location":"serverEngine.ts:getGameState","message":"getGameState called","data":{"beforePhase":"idle","afterPhase":"idle","tick":0,"pid":50814},"timestamp":1765469283303,"sessionId":"debug-session","hypothesisId":"B"}
+{"location":"api/state:GET","message":"State API called","data":{"phase":"idle","tick":0,"foods":0,"pid":50814},"timestamp":1765469283303,"sessionId":"debug-session","hypothesisId":"B,E"}

@@ -53,7 +53,13 @@ export async function POST(req: Request) {
       }
 
       case "start": {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/control:start:before',message:'Control API start action',data:{action:'start',pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const state = startGame();
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/control:start:after',message:'Control API start result',data:{phase:state.phase,foods:state.foods.length,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         result = { state };
         break;
       }

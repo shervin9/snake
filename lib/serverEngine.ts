@@ -82,18 +82,28 @@ interface PersistedState {
 }
 
 function loadStateFromFile(): PersistedState | null {
+  // #region agent log
+  const logLoad = (result: any) => fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:loadStateFromFile',message:'Load state from file',data:{exists:fs.existsSync(STATE_FILE),result:result?.gameState?.phase||'null',pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     if (fs.existsSync(STATE_FILE)) {
       const data = fs.readFileSync(STATE_FILE, 'utf-8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      logLoad(parsed);
+      return parsed;
     }
   } catch (err) {
     console.error('[ServerEngine] Failed to load state file:', err);
+    logLoad(null);
   }
+  logLoad(null);
   return null;
 }
 
 function saveStateToFile(): void {
+  // #region agent log
+  const logSave = (phase: string) => fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:saveStateToFile',message:'Save state to file',data:{phase,tick:globalState.__snakeGameState?.tick,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   try {
     const data: PersistedState = {
       gameState: globalState.__snakeGameState!,
@@ -101,6 +111,7 @@ function saveStateToFile(): void {
       portals: globalState.__snakePortals || [],
       config: globalState.__snakeConfig!,
     };
+    logSave(data.gameState.phase);
     fs.writeFileSync(STATE_FILE, JSON.stringify(data), 'utf-8');
   } catch (err) {
     console.error('[ServerEngine] Failed to save state file:', err);
@@ -737,6 +748,10 @@ export function setupGame(
 }
 
 export function startGame(): ServerGameState {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:startGame:entry',message:'startGame called',data:{pid:process.pid,currentPhase:globalState.__snakeGameState?.phase||'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  
   const state = getState();
   const config = getConfig();
   const cell = config.gridCellSize;
@@ -779,6 +794,10 @@ export function startGame(): ServerGameState {
 
   // Persist state to file
   saveStateToFile();
+
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:startGame:exit',message:'startGame exit',data:{phase:state.phase,foods:state.foods.length,monitors:monitors.length,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
 
   return { ...state };
 }
@@ -841,6 +860,10 @@ export function setDirection(dir: Direction): ServerGameState {
 }
 
 export function getGameState(): ServerGameState {
+  // #region agent log
+  const beforePhase = globalState.__snakeGameState?.phase;
+  // #endregion
+  
   // Ensure monitors are always configured (handles serverless cold starts)
   const monitors = getMonitors();
   if (monitors.length === 0) {
@@ -852,7 +875,13 @@ export function getGameState(): ServerGameState {
   }
   
   processTicks();
-  return { ...getState() };
+  const finalState = { ...getState() };
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/6187c2f3-4398-4a96-8981-ced766ad6ee8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'serverEngine.ts:getGameState',message:'getGameState called',data:{beforePhase,afterPhase:finalState.phase,tick:finalState.tick,pid:process.pid},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  
+  return finalState;
 }
 
 export function getMonitorsConfig(): MonitorConfig[] {
