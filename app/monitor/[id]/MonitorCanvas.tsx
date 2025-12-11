@@ -722,22 +722,42 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     >
       {/* Start Game Overlay (only on monitor 0 when idle) */}
       {monitorId === "0" && isIdle && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md">
-          <div className="text-center animate-in p-8">
-            <div className="text-8xl mb-6">🐍</div>
-            <h1 className="text-5xl font-bold text-white mb-4">Snake Game</h1>
-            <p className="text-xl text-slate-400 mb-8">
-              Use arrow keys to control the snake
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+          <div className="text-center animate-in p-8 max-w-2xl">
+            <div className="text-9xl mb-8 animate-bounce">🐍</div>
+            <h1 className="text-6xl font-bold text-white mb-4">Snake Game</h1>
+            <p className="text-2xl text-slate-400 mb-12">
+              Press the button or use arrow keys to start!
             </p>
             <Button
               onClick={handleStartGame}
               variant="gradient"
               size="xl"
-              className="gap-3 text-xl px-12 py-6"
+              className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
             >
-              <Play className="w-6 h-6" />
-              Start Game
+              <Play className="w-8 h-8" />
+              START GAME
             </Button>
+            <p className="text-lg text-slate-500 mt-8">
+              ↑ ↓ ← → Arrow keys to control
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Waiting Overlay (other monitors when idle) */}
+      {monitorId !== "0" && isIdle && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+          <div className="text-center animate-in p-8">
+            <div className="text-8xl mb-6 opacity-50">🐍</div>
+            <h1 className="text-4xl font-bold text-white mb-4">Monitor {monitorId}</h1>
+            <p className="text-xl text-slate-400">
+              Waiting for game to start...
+            </p>
+            <div className="mt-8 flex items-center justify-center gap-2">
+              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
+              <span className="text-slate-500">Connected</span>
+            </div>
           </div>
         </div>
       )}

@@ -11,9 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn, formatTime } from "@/lib/utils";
 import {
   Play,
-  Pause,
   RotateCcw,
-  Settings,
   Monitor,
   Timer,
   Trophy,
@@ -21,6 +19,7 @@ import {
   ArrowLeft,
   Keyboard,
   Apple,
+  ExternalLink,
 } from "lucide-react";
 
 // ============================================================================
@@ -45,7 +44,7 @@ type GameConfig = {
   foodPerMonitor: number;
 };
 
-type Monitor = {
+type MonitorType = {
   id: string;
   row: number;
   col: number;
@@ -63,27 +62,27 @@ export default function AdminPage() {
     timerSeconds: 120,
     foodPerMonitor: 5,
   });
-  const [monitors, setMonitors] = useState<Monitor[]>([]);
+  const [monitors, setMonitors] = useState<MonitorType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [setupMode, setSetupMode] = useState(true);
+  const [setupComplete, setSetupComplete] = useState(false);
 
   // Computed values
   const timeProgress = useMemo(() => {
-    if (!state) return 100;
+    if (!state || !state.totalTimeMs) return 100;
     return (state.timeLeftMs / state.totalTimeMs) * 100;
   }, [state]);
 
-  const timeVariant = useMemo(() => {
-    if (!state) return "success";
+  const timeVariant = useMemo((): "success" | "warning" | "danger" => {
+    if (!state || !state.totalTimeMs) return "success";
     const percent = (state.timeLeftMs / state.totalTimeMs) * 100;
     if (percent > 50) return "success";
     if (percent > 20) return "warning";
     return "danger";
   }, [state]);
 
-  // Poll server state
+  // Poll server state after setup
   useEffect(() => {
-    if (setupMode) return;
+    if (!setupComplete) return;
 
     const fetchState = async () => {
       try {
@@ -97,45 +96,20 @@ export default function AdminPage() {
     };
 
     fetchState();
-    const interval = setInterval(fetchState, 80);
+    const interval = setInterval(fetchState, 100);
 
     return () => clearInterval(interval);
-  }, [setupMode]);
+  }, [setupComplete]);
 
-  // Fetch monitors
+  // Fetch monitors after setup
   useEffect(() => {
-    if (setupMode) return;
+    if (!setupComplete) return;
 
     fetch("/api/monitors")
       .then((r) => r.json())
       .then((res) => setMonitors(res.monitors))
       .catch(console.error);
-  }, [setupMode]);
-
-  // Keyboard controls
-  useEffect(() => {
-    const sendInput = async (direction: "up" | "down" | "left" | "right") => {
-      try {
-        await fetch("/api/state/input", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ direction }),
-        });
-      } catch (err) {
-        console.error("Error sending input:", err);
-      }
-    };
-
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowUp") sendInput("up");
-      else if (e.key === "ArrowDown") sendInput("down");
-      else if (e.key === "ArrowLeft") sendInput("left");
-      else if (e.key === "ArrowRight") sendInput("right");
-    };
-
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, []);
+  }, [setupComplete]);
 
   // Handlers
   const handleSetup = useCallback(async () => {
@@ -155,40 +129,12 @@ export default function AdminPage() {
       if (data.monitors) {
         setMonitors(data.monitors);
       }
-      setSetupMode(false);
+      setSetupComplete(true);
     } catch (err) {
       console.error("Setup error:", err);
     }
     setIsLoading(false);
   }, [config]);
-
-  const handleStart = useCallback(async () => {
-    try {
-      const res = await fetch("/api/state/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start" }),
-      });
-      const data = await res.json();
-      setState(data.state);
-    } catch (err) {
-      console.error("Start error:", err);
-    }
-  }, []);
-
-  const handleStop = useCallback(async () => {
-    try {
-      const res = await fetch("/api/state/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "stop" }),
-      });
-      const data = await res.json();
-      setState(data.state);
-    } catch (err) {
-      console.error("Stop error:", err);
-    }
-  }, []);
 
   const handleReset = useCallback(async () => {
     try {
@@ -208,7 +154,7 @@ export default function AdminPage() {
   // Setup Mode UI
   // ============================================================================
 
-  if (setupMode) {
+  if (!setupComplete) {
     return (
       <main className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
         {/* Background */}
@@ -227,7 +173,7 @@ export default function AdminPage() {
               Snake Game Setup
             </CardTitle>
             <p className="text-slate-400 mt-2">
-              Configure your game settings before starting
+              Configure game settings for the event
             </p>
           </CardHeader>
 
@@ -289,7 +235,7 @@ export default function AdminPage() {
               />
             </div>
 
-            {/* Start Button */}
+            {/* Initialize Button */}
             <Button
               onClick={handleSetup}
               disabled={isLoading}
@@ -324,7 +270,7 @@ export default function AdminPage() {
   }
 
   // ============================================================================
-  // Game Control UI
+  // Dashboard UI (after setup - monitoring only)
   // ============================================================================
 
   return (
@@ -342,10 +288,10 @@ export default function AdminPage() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
                 <Zap className="w-5 h-5 text-white" />
               </div>
-              Operator Panel
+              Game Dashboard
             </h1>
             <p className="text-slate-400 mt-1">
-              Control and monitor your snake game
+              Monitor the game status across all displays
             </p>
           </div>
 
@@ -361,22 +307,38 @@ export default function AdminPage() {
               className="text-sm px-3 py-1"
             >
               {state?.phase === "running"
-                ? "Running"
+                ? "🎮 Game Running"
                 : state?.phase === "ended"
-                ? "Game Over"
-                : "Ready"}
+                ? "🏁 Game Over"
+                : "⏳ Waiting for Player"}
             </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSetupMode(true)}
-              className="text-slate-400"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              New Setup
-            </Button>
           </div>
         </div>
+
+        {/* Info Banner */}
+        {state?.phase === "idle" && (
+          <Card className="bg-emerald-500/10 border-emerald-500/30">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <Play className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-emerald-400 font-medium">Ready to Play!</p>
+                  <p className="text-sm text-emerald-400/70">
+                    Player can start the game from Monitor 0
+                  </p>
+                </div>
+              </div>
+              <Link href="/monitor/0" target="_blank">
+                <Button variant="outline" size="sm" className="text-emerald-400 border-emerald-500/50">
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Open Monitor 0
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -451,63 +413,35 @@ export default function AdminPage() {
         </div>
 
         {/* Time Progress */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-slate-400">Time Progress</span>
-              <span className="text-sm text-slate-400">
-                {Math.round(timeProgress)}%
-              </span>
-            </div>
-            <Progress value={timeProgress} variant={timeVariant} className="h-3" />
-          </CardContent>
-        </Card>
+        {state?.phase === "running" && (
+          <Card className="bg-slate-800/50 border-slate-700/50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-slate-400">Time Progress</span>
+                <span className="text-sm text-slate-400">
+                  {Math.round(timeProgress)}%
+                </span>
+              </div>
+              <Progress value={timeProgress} variant={timeVariant} className="h-3" />
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Controls */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-white flex items-center gap-2">
-              <Settings className="w-5 h-5 text-emerald-400" />
-              Game Controls
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                onClick={handleStart}
-                disabled={state?.phase === "running"}
-                variant="success"
-                size="lg"
-                className="flex-1 min-w-[140px]"
-              >
-                <Play className="w-5 h-5 mr-2" />
-                Start
-              </Button>
-              <Button
-                onClick={handleStop}
-                disabled={state?.phase !== "running"}
-                variant="destructive"
-                size="lg"
-                className="flex-1 min-w-[140px]"
-              >
-                <Pause className="w-5 h-5 mr-2" />
-                Stop
-              </Button>
-              <Button
-                onClick={handleReset}
-                variant="warning"
-                size="lg"
-                className="flex-1 min-w-[140px]"
-              >
+        {/* Reset Button (only show when game ended) */}
+        {state?.phase === "ended" && (
+          <Card className="bg-slate-800/50 border-slate-700/50">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-white font-medium">Game Ended</p>
+                <p className="text-sm text-slate-400">Final Score: {state.score}</p>
+              </div>
+              <Button onClick={handleReset} variant="warning" size="lg">
                 <RotateCcw className="w-5 h-5 mr-2" />
-                Reset
+                Reset Game
               </Button>
-            </div>
-            <p className="text-sm text-slate-500 mt-4 text-center">
-              Use arrow keys (↑ ↓ ← →) to control the snake
-            </p>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Monitor Grid */}
         <Card className="bg-slate-800/50 border-slate-700/50">
@@ -532,7 +466,7 @@ export default function AdminPage() {
                   state?.foods?.filter((f) => f.monitorId === m.id).length ?? 0;
 
                 return (
-                  <Link key={m.id} href={`/monitor/${m.id}`}>
+                  <Link key={m.id} href={`/monitor/${m.id}`} target="_blank">
                     <div
                       className={cn(
                         "monitor-preview p-4 cursor-pointer",
@@ -542,6 +476,9 @@ export default function AdminPage() {
                       <div className="flex items-center justify-between mb-3">
                         <span className="font-semibold text-white">
                           Monitor {m.id}
+                          {m.id === "0" && (
+                            <span className="ml-2 text-xs text-emerald-400">(Player)</span>
+                          )}
                         </span>
                         {isActive && (
                           <span className="text-2xl animate-pulse">🐍</span>
@@ -574,7 +511,20 @@ export default function AdminPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Instructions */}
+        <Card className="bg-slate-800/50 border-slate-700/50">
+          <CardContent className="p-4">
+            <p className="text-sm text-slate-400 text-center">
+              💡 <strong className="text-slate-300">Tip:</strong> Open each monitor URL in fullscreen (F11) on separate displays. 
+              The player controls the snake using arrow keys from Monitor 0.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </main>
   );
 }
+
+
+
