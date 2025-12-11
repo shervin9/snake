@@ -39,3 +39,7 @@ coverage/
 # Misc
 *.tsbuildinfo
 next-env.d.ts
+
+# Game state persistence
+.game-state.json
+ecosystem.config.cjs

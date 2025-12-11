@@ -7,7 +7,11 @@
  * - Wall collision: Proper boundary checking with clear logic
  * - Food spawn: Grid-aligned positions, no overlap with snake
  * - Self collision: Fixed to check actual grid cell overlap
+ * - State persistence: Uses file-based storage for reliable state across requests
  */
+
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ============================================================================
 // Types
@@ -65,7 +69,46 @@ const DEFAULT_TICK_INTERVAL = 100; // ms between game ticks (faster = harder)
 const PORTAL_DETECTION_RADIUS = 80; // Distance to trigger portal teleport
 
 // ============================================================================
-// Global State (survives hot reloads)
+// File-based State Persistence (survives process restarts)
+// ============================================================================
+
+const STATE_FILE = path.join(process.cwd(), '.game-state.json');
+
+interface PersistedState {
+  gameState: ServerGameState;
+  monitors: MonitorConfig[];
+  portals: Portal[];
+  config: GameConfig;
+}
+
+function loadStateFromFile(): PersistedState | null {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const data = fs.readFileSync(STATE_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[ServerEngine] Failed to load state file:', err);
+  }
+  return null;
+}
+
+function saveStateToFile(): void {
+  try {
+    const data: PersistedState = {
+      gameState: globalState.__snakeGameState!,
+      monitors: globalState.__snakeMonitors || [],
+      portals: globalState.__snakePortals || [],
+      config: globalState.__snakeConfig!,
+    };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data), 'utf-8');
+  } catch (err) {
+    console.error('[ServerEngine] Failed to save state file:', err);
+  }
+}
+
+// ============================================================================
+// Global State (with file persistence fallback)
 // ============================================================================
 
 const globalState = globalThis as typeof globalThis & {
@@ -73,7 +116,23 @@ const globalState = globalThis as typeof globalThis & {
   __snakeMonitors?: MonitorConfig[];
   __snakePortals?: Portal[];
   __snakeConfig?: GameConfig;
+  __snakeInitialized?: boolean;
 };
+
+// Initialize from file if not in memory
+function ensureInitialized(): void {
+  if (globalState.__snakeInitialized) return;
+  
+  const persisted = loadStateFromFile();
+  if (persisted) {
+    globalState.__snakeGameState = persisted.gameState;
+    globalState.__snakeMonitors = persisted.monitors;
+    globalState.__snakePortals = persisted.portals;
+    globalState.__snakeConfig = persisted.config;
+    console.log('[ServerEngine] Loaded state from file, phase:', persisted.gameState.phase);
+  }
+  globalState.__snakeInitialized = true;
+}
 
 // ============================================================================
 // Utility Functions
@@ -116,6 +175,8 @@ function snapToGrid(x: number, y: number, cellSize: number): { x: number; y: num
 // ============================================================================
 
 function getState(): ServerGameState {
+  ensureInitialized();
+  
   if (!globalState.__snakeGameState) {
     const cell = getConfig().gridCellSize;
     globalState.__snakeGameState = {
@@ -139,6 +200,8 @@ function getState(): ServerGameState {
 }
 
 function getConfig(): GameConfig {
+  ensureInitialized();
+  
   if (!globalState.__snakeConfig) {
     globalState.__snakeConfig = {
       monitorCount: 6,
@@ -152,10 +215,12 @@ function getConfig(): GameConfig {
 }
 
 function getMonitors(): MonitorConfig[] {
+  ensureInitialized();
   return globalState.__snakeMonitors || [];
 }
 
 function getPortals(): Portal[] {
+  ensureInitialized();
   return globalState.__snakePortals || [];
 }
 
@@ -557,6 +622,9 @@ function processTicks(): void {
       if (state.phase !== "running") break;
     }
     state.lastTickTime = now;
+    
+    // Persist state periodically (every tick batch)
+    saveStateToFile();
   }
 }
 
@@ -661,6 +729,9 @@ export function setupGame(
 
   // Reset state
   resetGame();
+  
+  // Save to file
+  saveStateToFile();
 
   return { monitors, portals };
 }
@@ -706,12 +777,16 @@ export function startGame(): ServerGameState {
   generateInitialFoods();
   console.log(`[ServerEngine] Game started! Foods: ${state.foods.length}, Monitors: ${monitors.length}`);
 
+  // Persist state to file
+  saveStateToFile();
+
   return { ...state };
 }
 
 export function stopGameAction(): ServerGameState {
   const state = getState();
   state.phase = "ended";
+  saveStateToFile();
   return { ...state };
 }
 
@@ -742,6 +817,7 @@ export function resetGame(): ServerGameState {
   state.totalTimeMs = config.timerSeconds * 1000;
   state.timeLeftMs = config.timerSeconds * 1000;
 
+  saveStateToFile();
   return { ...state };
 }
 
@@ -758,6 +834,7 @@ export function setDirection(dir: Direction): ServerGameState {
 
   if (opposite[dir] !== state.dir) {
     state.nextDir = dir; // Buffer the direction change
+    saveStateToFile();
   }
 
   return { ...state };
