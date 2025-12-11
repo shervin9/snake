@@ -1,0 +1,242 @@
+@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 142 76% 36%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 142 76% 36%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Vazirmatn', 'Inter', system-ui, sans-serif;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+
+  /* RTL Support */
+  html[dir="rtl"] body {
+    direction: rtl;
+  }
+}
+
+@layer components {
+  /* Custom button styles */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    @apply disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground shadow hover:bg-primary/90;
+    @apply active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80;
+  }
+
+  .btn-destructive {
+    @apply bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+
+  .btn-lg {
+    @apply h-12 px-8 text-base;
+  }
+
+  .btn-sm {
+    @apply h-8 px-3 text-xs;
+  }
+
+  .btn-icon {
+    @apply h-10 w-10 p-0;
+  }
+
+  /* Card styles */
+  .game-card {
+    @apply rounded-xl border border-border bg-card p-6 shadow-lg;
+    @apply backdrop-blur-sm;
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+
+  /* Gradient backgrounds */
+  .gradient-primary {
+    @apply bg-gradient-to-br from-emerald-500 to-teal-600;
+  }
+
+  .gradient-danger {
+    @apply bg-gradient-to-br from-rose-500 to-red-600;
+  }
+
+  .gradient-warning {
+    @apply bg-gradient-to-br from-amber-500 to-orange-500;
+  }
+
+  .gradient-info {
+    @apply bg-gradient-to-br from-blue-500 to-indigo-600;
+  }
+
+  /* Snake game specific */
+  .snake-head {
+    @apply bg-emerald-500 rounded-lg shadow-lg;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+  }
+
+  .snake-body {
+    @apply bg-emerald-400 rounded-md;
+  }
+
+  .food-item {
+    @apply bg-rose-500 rounded-full shadow-lg;
+    animation: food-bounce 1.5s ease-in-out infinite;
+  }
+
+  /* Stats display */
+  .stat-card {
+    @apply flex flex-col items-center justify-center p-4 rounded-xl;
+    @apply bg-gradient-to-br from-slate-800/50 to-slate-900/50;
+    @apply border border-slate-700/50;
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold text-white;
+  }
+
+  .stat-label {
+    @apply text-sm text-slate-400 mt-1;
+  }
+
+  /* Monitor preview */
+  .monitor-preview {
+    @apply relative rounded-xl overflow-hidden;
+    @apply border-2 border-slate-700 bg-slate-900;
+    @apply transition-all duration-300;
+  }
+
+  .monitor-preview.active {
+    @apply border-emerald-500 shadow-lg;
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
+  }
+
+  /* Animations */
+  .animate-in {
+    animation: slide-in 0.3s ease-out;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@layer utilities {
+  /* Custom scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-emerald-400 to-cyan-400;
+  }
+
+  /* Glow effects */
+  .glow-sm {
+    box-shadow: 0 0 10px currentColor;
+  }
+
+  .glow-md {
+    box-shadow: 0 0 20px currentColor;
+  }
+
+  .glow-lg {
+    box-shadow: 0 0 40px currentColor;
+  }
+}
+
+/* Keyframe animations */
+@keyframes food-bounce {
+  0%, 100% { 
+    transform: scale(1); 
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.15); 
+    opacity: 0.9;
+  }
+}
+
+@keyframes slide-in {
+  0% { 
+    transform: translateY(-10px); 
+    opacity: 0; 
+  }
+  100% { 
+    transform: translateY(0); 
+    opacity: 1; 
+  }
+}
+
+@keyframes pulse-ring {
+  0% { 
+    transform: scale(0.95); 
+    opacity: 0.5; 
+  }
+  50% { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+  100% { 
+    transform: scale(0.95); 
+    opacity: 0.5; 
+  }
+}

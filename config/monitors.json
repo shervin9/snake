@@ -1,0 +1,9 @@
+[
+  { "id": "0", "displayIndex": 0, "row": 0, "col": 0, "rotationDeg": 0, "theme": "forest" },
+  { "id": "1", "displayIndex": 1, "row": 0, "col": 1, "rotationDeg": 90, "theme": "fire" },
+  { "id": "2", "displayIndex": 2, "row": 0, "col": 2, "rotationDeg": 180, "theme": "ice" },
+  { "id": "3", "displayIndex": 3, "row": 1, "col": 0, "rotationDeg": 270, "theme": "forest" },
+  { "id": "4", "displayIndex": 4, "row": 1, "col": 1, "rotationDeg": 0, "theme": "fire" },
+  { "id": "5", "displayIndex": 5, "row": 1, "col": 2, "rotationDeg": 90, "theme": "ice" }
+]
+
