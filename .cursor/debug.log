@@ -1,1 +1,0 @@
-{"location":"serverEngine.ts:getGameState","message":"getGameState called","data":{"beforePhase":"idle","afterPhase":"idle","tick":0,"pid":59416},"timestamp":1765469827674,"sessionId":"debug-session","hypothesisId":"B"}
