@@ -591,7 +591,13 @@ function step(): void {
     // Check wall collision (only if not going through portal)
     if (checkWallCollision(newHead, currentMonitor.id)) {
       // #region agent log
-      console.log('[DEBUG-STEP] Game ended - wall collision at', newHead, 'monitor:', currentMonitor.id);
+      const origin = monitorOrigin(currentMonitor.id);
+      console.log('[DEBUG-STEP] WALL COLLISION:');
+      console.log('  - newHead:', newHead);
+      console.log('  - currentMonitor:', currentMonitor.id);
+      console.log('  - monitor origin:', origin);
+      console.log('  - local pos:', {x: newHead.x - origin.x, y: newHead.y - origin.y});
+      console.log('  - bounds: 0 to', MONITOR_W, 'x', MONITOR_H);
       // #endregion
       state.phase = "ended";
       return;

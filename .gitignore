@@ -44,5 +44,8 @@ next-env.d.ts
 .game-state.json
 ecosystem.config.cjs
 
+# Game configuration (user-specific)
+game.config.json
+
 
 
