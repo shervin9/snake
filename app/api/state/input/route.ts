@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { setDirection, getGameState, type Direction } from "@/lib/serverEngine";
 
+// Force dynamic rendering and Node.js runtime
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 interface InputBody {
   direction: string;
 }

@@ -1,6 +1,7 @@
 /**
- * Server-side game engine with FILE-BASED state persistence.
- * Works reliably in both development and production modes.
+ * Server-side game engine with IN-MEMORY state.
+ * Uses globalThis for state persistence across requests in production.
+ * Config loaded from game.config.json file.
  */
 
 import * as fs from 'fs';
@@ -35,6 +36,7 @@ export type GameConfig = {
   foodPerMonitor: number;
   gridCellSize: number;
   tickIntervalMs: number;
+  snakeSpeed: number;
 };
 
 export type MonitorConfig = {
@@ -58,55 +60,72 @@ export type Portal = {
 const MONITOR_W = 1920;
 const MONITOR_H = 1080;
 const DEFAULT_CELL = 30;
-const DEFAULT_TICK_INTERVAL = 100;
 const PORTAL_RADIUS = 80;
-
-// State file path
-const STATE_FILE = path.join(process.cwd(), '.snake-state.json');
+const CONFIG_FILE = path.join(process.cwd(), 'game.config.json');
 
 // ============================================================================
-// File-based State Management
+// Global State (persists across requests via globalThis)
 // ============================================================================
 
-interface FullState {
+interface GlobalState {
   config: GameConfig;
   monitors: MonitorConfig[];
   portals: Portal[];
   game: ServerGameState;
+  initialized: boolean;
 }
 
-function getDefaultConfig(): GameConfig {
-  return {
-    monitorCount: 6,
-    timerSeconds: 120,
-    foodPerMonitor: 5,
-    gridCellSize: DEFAULT_CELL,
-    tickIntervalMs: DEFAULT_TICK_INTERVAL,
-  };
+// Use globalThis to persist state across API requests
+const G = globalThis as typeof globalThis & { __snakeGame?: GlobalState };
+
+function getGlobal(): GlobalState {
+  if (!G.__snakeGame) {
+    G.__snakeGame = createInitialState();
+  }
+  return G.__snakeGame;
 }
 
-function getDefaultGameState(config: GameConfig): ServerGameState {
-  const startX = MONITOR_W / 2;
-  const startY = MONITOR_H / 2;
-  const cell = config.gridCellSize;
+// ============================================================================
+// Config Loading
+// ============================================================================
+
+interface FileConfig {
+  monitorCount?: number;
+  timerSeconds?: number;
+  foodPerMonitor?: number;
+  snakeSpeed?: number;
+}
+
+function loadConfigFromFile(): FileConfig {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[Snake] Error loading config:', err);
+  }
+  return {};
+}
+
+function createConfig(fileConfig: FileConfig): GameConfig {
+  // snakeSpeed: 1 = slow (200ms), 10 = fast (50ms)
+  const speed = Math.max(1, Math.min(10, fileConfig.snakeSpeed ?? 8));
+  const tickIntervalMs = 250 - (speed * 20); // speed 1=230ms, speed 10=50ms
   
   return {
-    phase: "idle",
-    score: 0,
-    dir: "right",
-    nextDir: "right",
-    snake: [
-      snapToGrid(startX, startY, cell),
-      snapToGrid(startX - cell, startY, cell),
-    ],
-    foods: [],
-    activeMonitorId: "0",
-    tick: 0,
-    lastTickTime: Date.now(),
-    timeLeftMs: config.timerSeconds * 1000,
-    totalTimeMs: config.timerSeconds * 1000,
+    monitorCount: fileConfig.monitorCount ?? 6,
+    timerSeconds: fileConfig.timerSeconds ?? 120,
+    foodPerMonitor: fileConfig.foodPerMonitor ?? 5,
+    gridCellSize: DEFAULT_CELL,
+    tickIntervalMs,
+    snakeSpeed: speed,
   };
 }
+
+// ============================================================================
+// Initialization
+// ============================================================================
 
 function generateMonitors(count: number): MonitorConfig[] {
   const monitors: MonitorConfig[] = [];
@@ -135,34 +154,45 @@ function generatePortals(monitors: MonitorConfig[]): Portal[] {
   return portals;
 }
 
-function loadState(): FullState {
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const data = fs.readFileSync(STATE_FILE, 'utf-8');
-      const state = JSON.parse(data) as FullState;
-      // Update lastTickTime to now to prevent time jumps
-      state.game.lastTickTime = Date.now();
-      return state;
-    }
-  } catch (err) {
-    console.error('[Snake] Error loading state:', err);
-  }
+function createInitialGameState(config: GameConfig): ServerGameState {
+  const startX = MONITOR_W / 2;
+  const startY = MONITOR_H / 2;
+  const cell = config.gridCellSize;
   
-  // Return default state
-  const config = getDefaultConfig();
-  const monitors = generateMonitors(config.monitorCount);
-  const portals = generatePortals(monitors);
-  const game = getDefaultGameState(config);
-  
-  return { config, monitors, portals, game };
+  return {
+    phase: "idle",
+    score: 0,
+    dir: "right",
+    nextDir: "right",
+    snake: [
+      snapToGrid(startX, startY, cell),
+      snapToGrid(startX - cell, startY, cell),
+    ],
+    foods: [],
+    activeMonitorId: "0",
+    tick: 0,
+    lastTickTime: Date.now(),
+    timeLeftMs: config.timerSeconds * 1000,
+    totalTimeMs: config.timerSeconds * 1000,
+  };
 }
 
-function saveState(state: FullState): void {
-  try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state), 'utf-8');
-  } catch (err) {
-    console.error('[Snake] Error saving state:', err);
-  }
+function createInitialState(): GlobalState {
+  const fileConfig = loadConfigFromFile();
+  const config = createConfig(fileConfig);
+  const monitors = generateMonitors(config.monitorCount);
+  const portals = generatePortals(monitors);
+  const game = createInitialGameState(config);
+  
+  console.log(`[Snake] Initialized: ${config.monitorCount} monitors, speed=${config.snakeSpeed} (${config.tickIntervalMs}ms)`);
+  
+  return {
+    config,
+    monitors,
+    portals,
+    game,
+    initialized: true,
+  };
 }
 
 // ============================================================================
@@ -196,7 +226,7 @@ function findMonitor(monitors: MonitorConfig[], pos: { x: number; y: number }): 
 // Food Generation
 // ============================================================================
 
-function spawnFoods(state: FullState): void {
+function spawnFoods(state: GlobalState): void {
   state.game.foods = [];
   
   for (const m of state.monitors) {
@@ -218,7 +248,7 @@ function spawnFoods(state: FullState): void {
   }
 }
 
-function respawnFood(state: FullState, monitorId: string): void {
+function respawnFood(state: GlobalState, monitorId: string): void {
   const m = state.monitors.find((mm) => mm.id === monitorId);
   if (!m) return;
   
@@ -240,12 +270,15 @@ function respawnFood(state: FullState, monitorId: string): void {
 // Game Logic
 // ============================================================================
 
-function step(state: FullState): void {
+function step(state: GlobalState): void {
   const game = state.game;
   if (game.phase !== "running") return;
   
   const cell = state.config.gridCellSize;
   const head = game.snake[0];
+  
+  // Apply direction
+  game.dir = game.nextDir;
   
   // Calculate new head position
   const dx = game.dir === "left" ? -cell : game.dir === "right" ? cell : 0;
@@ -281,6 +314,7 @@ function step(state: FullState): void {
     // Check wall collision (only if not through portal)
     if (!throughPortal) {
       if (localX < cell || localX > MONITOR_W - cell || localY < cell || localY > MONITOR_H - cell) {
+        console.log(`[Snake] Wall collision at local (${localX}, ${localY})`);
         game.phase = "ended";
         return;
       }
@@ -313,32 +347,31 @@ function step(state: FullState): void {
   for (let i = 3; i < game.snake.length; i++) {
     const seg = game.snake[i];
     if (Math.abs(newHead.x - seg.x) < cell / 2 && Math.abs(newHead.y - seg.y) < cell / 2) {
+      console.log(`[Snake] Self collision at segment ${i}`);
       game.phase = "ended";
       return;
     }
   }
   
-  // Apply buffered direction
-  game.dir = game.nextDir;
   game.tick++;
-  
-  // Update timer
-  const now = Date.now();
-  game.timeLeftMs -= now - game.lastTickTime;
-  game.lastTickTime = now;
-  
-  if (game.timeLeftMs <= 0) {
-    game.phase = "ended";
-  }
 }
 
-function processTicks(state: FullState): void {
+function processTicks(state: GlobalState): void {
   if (state.game.phase !== "running") return;
   
   const now = Date.now();
   const elapsed = now - state.game.lastTickTime;
-  const ticks = Math.floor(elapsed / state.config.tickIntervalMs);
   
+  // Update timer
+  state.game.timeLeftMs -= elapsed;
+  if (state.game.timeLeftMs <= 0) {
+    state.game.phase = "ended";
+    console.log('[Snake] Time up!');
+    return;
+  }
+  
+  // Process ticks
+  const ticks = Math.floor(elapsed / state.config.tickIntervalMs);
   if (ticks > 0) {
     const maxTicks = Math.min(ticks, 5);
     for (let i = 0; i < maxTicks; i++) {
@@ -354,7 +387,7 @@ function processTicks(state: FullState): void {
 // ============================================================================
 
 export function startGame(): ServerGameState {
-  const state = loadState();
+  const state = getGlobal();
   
   if (state.game.phase === "running") {
     return { ...state.game };
@@ -379,21 +412,19 @@ export function startGame(): ServerGameState {
   state.game.totalTimeMs = state.config.timerSeconds * 1000;
   
   spawnFoods(state);
-  saveState(state);
   
-  console.log(`[Snake] Game started! Foods: ${state.game.foods.length}`);
+  console.log(`[Snake] Game started! Foods: ${state.game.foods.length}, Speed: ${state.config.snakeSpeed}`);
   return { ...state.game };
 }
 
 export function stopGameAction(): ServerGameState {
-  const state = loadState();
+  const state = getGlobal();
   state.game.phase = "ended";
-  saveState(state);
   return { ...state.game };
 }
 
 export function resetGame(): ServerGameState {
-  const state = loadState();
+  const state = getGlobal();
   
   const cell = state.config.gridCellSize;
   const startX = MONITOR_W / 2;
@@ -414,12 +445,16 @@ export function resetGame(): ServerGameState {
   state.game.timeLeftMs = state.config.timerSeconds * 1000;
   state.game.totalTimeMs = state.config.timerSeconds * 1000;
   
-  saveState(state);
+  console.log('[Snake] Game reset');
   return { ...state.game };
 }
 
 export function setDirection(dir: Direction): ServerGameState {
-  const state = loadState();
+  const state = getGlobal();
+  
+  if (state.game.phase !== "running") {
+    return { ...state.game };
+  }
   
   const opposite: Record<Direction, Direction> = {
     up: "down", down: "up", left: "right", right: "left"
@@ -427,38 +462,35 @@ export function setDirection(dir: Direction): ServerGameState {
   
   if (opposite[dir] !== state.game.dir) {
     state.game.nextDir = dir;
-    saveState(state);
   }
   
   return { ...state.game };
 }
 
 export function getGameState(): ServerGameState {
-  const state = loadState();
+  const state = getGlobal();
   processTicks(state);
-  saveState(state);
   return { ...state.game };
 }
 
 export function getMonitorsConfig(): MonitorConfig[] {
-  const state = loadState();
+  const state = getGlobal();
   return [...state.monitors];
 }
 
 export function getPortalsConfig(): Portal[] {
-  const state = loadState();
+  const state = getGlobal();
   return [...state.portals];
 }
 
 export function getGameConfig(): GameConfig {
-  const state = loadState();
+  const state = getGlobal();
   return { ...state.config };
 }
 
 export function updateConfig(newConfig: Partial<GameConfig>): void {
-  const state = loadState();
+  const state = getGlobal();
   Object.assign(state.config, newConfig);
-  saveState(state);
 }
 
 export function setupGame(
@@ -466,32 +498,39 @@ export function setupGame(
   timerSeconds: number,
   foodPerMonitor: number = 5
 ): { monitors: MonitorConfig[]; portals: Portal[] } {
-  const config = getDefaultConfig();
-  config.monitorCount = monitorCount;
-  config.timerSeconds = timerSeconds;
-  config.foodPerMonitor = foodPerMonitor;
+  const state = getGlobal();
   
-  const monitors = generateMonitors(monitorCount);
-  const portals = generatePortals(monitors);
-  const game = getDefaultGameState(config);
+  state.config.monitorCount = monitorCount;
+  state.config.timerSeconds = timerSeconds;
+  state.config.foodPerMonitor = foodPerMonitor;
+  state.monitors = generateMonitors(monitorCount);
+  state.portals = generatePortals(state.monitors);
+  state.game = createInitialGameState(state.config);
   
-  const state: FullState = { config, monitors, portals, game };
-  saveState(state);
-  
-  return { monitors: [...monitors], portals: [...portals] };
+  return { monitors: [...state.monitors], portals: [...state.portals] };
 }
 
 export function initServerEngine(m: MonitorConfig[], p: Portal[]): void {
-  const state = loadState();
+  const state = getGlobal();
   state.monitors = m;
   state.portals = p;
-  saveState(state);
+}
+
+// Force reload config from file
+export function reloadConfig(): GameConfig {
+  const fileConfig = loadConfigFromFile();
+  const state = getGlobal();
+  const newConfig = createConfig(fileConfig);
+  state.config = newConfig;
+  state.monitors = generateMonitors(newConfig.monitorCount);
+  state.portals = generatePortals(state.monitors);
+  console.log(`[Snake] Config reloaded: speed=${newConfig.snakeSpeed} (${newConfig.tickIntervalMs}ms)`);
+  return { ...newConfig };
 }
 
 export const GAME_CONSTANTS = {
   MONITOR_W,
   MONITOR_H,
   DEFAULT_CELL,
-  DEFAULT_TICK_INTERVAL,
   PORTAL_DETECTION_RADIUS: PORTAL_RADIUS,
 };

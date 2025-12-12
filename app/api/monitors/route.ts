@@ -6,6 +6,10 @@ import {
   GAME_CONSTANTS,
 } from "@/lib/serverEngine";
 
+// Force dynamic rendering and Node.js runtime
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 /**
  * GET /api/monitors
  * Returns monitor configuration

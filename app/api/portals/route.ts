@@ -6,6 +6,10 @@ import {
   getGameConfig,
 } from "@/lib/serverEngine";
 
+// Force dynamic rendering and Node.js runtime
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 /**
  * GET /api/portals
  * Returns portal configuration for multi-monitor teleportation

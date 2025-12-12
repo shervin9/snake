@@ -1,6 +1,6 @@
 {
   "monitorCount": 6,
   "timerSeconds": 120,
-  "foodPerMonitor": 5
+  "foodPerMonitor": 5,
+  "snakeSpeed": 8
 }
-
