@@ -624,20 +624,35 @@ function processTicks(): void {
   const state = getState();
   const config = getConfig();
 
+  // #region agent log
+  console.log('[DEBUG-TICK] processTicks called - phase:', state.phase, 'tick:', state.tick, 'lastTickTime:', state.lastTickTime);
+  // #endregion
+
   if (state.phase !== "running") return;
 
   const now = Date.now();
   const elapsed = now - state.lastTickTime;
   const ticksToProcess = Math.floor(elapsed / config.tickIntervalMs);
 
+  // #region agent log
+  console.log('[DEBUG-TICK] Time check - now:', now, 'elapsed:', elapsed, 'tickInterval:', config.tickIntervalMs, 'ticksToProcess:', ticksToProcess);
+  // #endregion
+
   if (ticksToProcess > 0) {
     // Cap at 10 ticks to prevent catchup lag
     const maxTicks = Math.min(ticksToProcess, 10);
+    // #region agent log
+    console.log('[DEBUG-TICK] Processing', maxTicks, 'ticks');
+    // #endregion
     for (let i = 0; i < maxTicks; i++) {
       step();
       if (state.phase !== "running") break;
     }
     state.lastTickTime = now;
+    
+    // #region agent log
+    console.log('[DEBUG-TICK] After processing - tick:', state.tick, 'phase:', state.phase);
+    // #endregion
     
     // Persist state periodically (every tick batch)
     saveStateToFile();
