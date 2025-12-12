@@ -116,6 +116,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
   const [config, setConfig] = useState<MonitorConfig | null>(null);
   const [portals, setPortals] = useState<Portal[]>([]);
   const [isIdle, setIsIdle] = useState(true);
+  const [isEnded, setIsEnded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentScore, setCurrentScore] = useState(0);
@@ -160,6 +161,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         prevStateRef.current = stateRef.current;
         stateRef.current = data.state;
         setIsIdle(data.state?.phase === "idle");
+        setIsEnded(data.state?.phase === "ended");
         setCurrentScore(data.state?.score ?? 0);
         setCurrentTime(data.state?.timeLeftMs ?? 0);
       } catch (err) {
@@ -214,9 +216,31 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       if (data.state) {
         stateRef.current = data.state;
         setIsIdle(data.state.phase === "idle");
+        setIsEnded(data.state.phase === "ended");
       }
     } catch (err) {
       console.error("Failed to start game:", err);
+    }
+  }, []);
+
+  // Reset game handler
+  const handleResetGame = useCallback(async () => {
+    console.log("Resetting game...");
+    try {
+      const res = await fetch("/api/state/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset" }),
+      });
+      const data = await res.json();
+      console.log("Reset game response:", data);
+      if (data.state) {
+        stateRef.current = data.state;
+        setIsIdle(data.state.phase === "idle");
+        setIsEnded(data.state.phase === "ended");
+      }
+    } catch (err) {
+      console.error("Failed to reset game:", err);
     }
   }, []);
 
@@ -790,6 +814,44 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
               <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
               <span className="text-slate-500">Connected</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game Over Overlay (on monitor 0 when ended) */}
+      {monitorId === "0" && isEnded && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+          <div className="text-center animate-in p-8 max-w-2xl">
+            <div className="text-9xl mb-8">💀</div>
+            <h1 className="text-6xl font-bold text-rose-500 mb-4">GAME OVER</h1>
+            <p className="text-4xl text-amber-400 mb-8">
+              Final Score: {currentScore}
+            </p>
+            <Button
+              onClick={handleResetGame}
+              variant="gradient"
+              size="xl"
+              className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
+            >
+              <Play className="w-8 h-8" />
+              PLAY AGAIN
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Game Over Overlay (other monitors when ended) */}
+      {monitorId !== "0" && isEnded && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+          <div className="text-center animate-in p-8">
+            <div className="text-8xl mb-6">💀</div>
+            <h1 className="text-4xl font-bold text-rose-500 mb-4">GAME OVER</h1>
+            <p className="text-2xl text-amber-400">
+              Final Score: {currentScore}
+            </p>
+            <p className="text-lg text-slate-400 mt-8">
+              Go to Monitor 0 to play again
+            </p>
           </div>
         </div>
       )}
