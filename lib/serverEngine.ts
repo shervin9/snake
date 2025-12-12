@@ -532,6 +532,10 @@ function step(): void {
   if (state.phase !== "running") return;
 
   state.tick += 1;
+  
+  // #region agent log
+  console.log('[DEBUG-STEP] Tick', state.tick, '- snake head:', state.snake[0], 'dir:', state.dir);
+  // #endregion
 
   // Update timer
   const now = Date.now();
@@ -541,6 +545,9 @@ function step(): void {
 
   // Check time limit
   if (state.timeLeftMs <= 0) {
+    // #region agent log
+    console.log('[DEBUG-STEP] Game ended - time limit');
+    // #endregion
     state.phase = "ended";
     return;
   }
@@ -553,6 +560,10 @@ function step(): void {
   const dx = state.dir === "left" ? -cell : state.dir === "right" ? cell : 0;
   const dy = state.dir === "up" ? -cell : state.dir === "down" ? cell : 0;
   let newHead = { x: head.x + dx, y: head.y + dy };
+  
+  // #region agent log
+  console.log('[DEBUG-STEP] New head position:', newHead);
+  // #endregion
 
   // Find current monitor
   const currentMonitor = locateMonitor(head);
@@ -579,6 +590,9 @@ function step(): void {
   } else {
     // Check wall collision (only if not going through portal)
     if (checkWallCollision(newHead, currentMonitor.id)) {
+      // #region agent log
+      console.log('[DEBUG-STEP] Game ended - wall collision at', newHead, 'monitor:', currentMonitor.id);
+      // #endregion
       state.phase = "ended";
       return;
     }
@@ -590,6 +604,9 @@ function step(): void {
 
   // Check self collision
   if (checkSelfCollision()) {
+    // #region agent log
+    console.log('[DEBUG-STEP] Game ended - self collision');
+    // #endregion
     state.snake = prevSnake; // Restore
     state.phase = "ended";
     return;
