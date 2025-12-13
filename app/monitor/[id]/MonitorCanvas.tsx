@@ -444,24 +444,24 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     // UI Elements
     // ================================================================
 
-    // Score display
+    // Score display (top-right for RTL)
     const scoreText = new PIXI.Text("امتیاز: ۰", {
       fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 28,
       fill: THEME.gold,
       fontWeight: "bold",
     });
-    scoreText.anchor.set(0, 0); // RTL: anchor to left
+    scoreText.anchor.set(1, 0); // Anchor right edge
     uiLayer.addChild(scoreText);
 
-    // Timer display
+    // Timer display (top-left for RTL)
     const timerText = new PIXI.Text("زمان: ۰:۰۰", {
       fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 28,
       fill: THEME.text,
       fontWeight: "bold",
     });
-    timerText.anchor.set(1, 0); // RTL: anchor to right
+    timerText.anchor.set(0, 0); // Anchor left edge
     uiLayer.addChild(timerText);
 
     // Monitor label
@@ -536,9 +536,10 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       const padding = 24;
       uiLayer.pivot.set(w / 2, h / 2);
 
+      // Score on right, timer on left (RTL layout)
       scoreText.position.set(w - padding, padding);
       timerText.position.set(padding, padding);
-      monitorLabel.position.set(w / 2, padding);
+      monitorLabel.position.set(w / 2, h - padding - 20);
 
       // Game over overlay
       gameOverCont.position.set(w / 2, h / 2);
@@ -759,23 +760,31 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       const targetSnake = targetSnakeRef.current;
       const interpolatedSnake = interpolatedSnakeRef.current;
       
-      // Adjust interpolated snake length to match target
-      while (interpolatedSnake.length < targetSnake.length) {
-        const lastSeg = interpolatedSnake[interpolatedSnake.length - 1] || targetSnake[interpolatedSnake.length];
-        interpolatedSnake.push({ x: lastSeg.x, y: lastSeg.y });
-      }
-      while (interpolatedSnake.length > targetSnake.length && interpolatedSnake.length > 0) {
-        interpolatedSnake.pop();
+      // Use server snake directly if interpolation not ready
+      const snakeToRender = (targetSnake.length > 0 && interpolatedSnake.length > 0) 
+        ? interpolatedSnake 
+        : s.snake;
+      
+      // Only interpolate if we have valid targets
+      if (targetSnake.length > 0) {
+        // Adjust interpolated snake length to match target
+        while (interpolatedSnake.length < targetSnake.length) {
+          const lastSeg = interpolatedSnake[interpolatedSnake.length - 1] || targetSnake[interpolatedSnake.length];
+          interpolatedSnake.push({ x: lastSeg.x, y: lastSeg.y });
+        }
+        while (interpolatedSnake.length > targetSnake.length && interpolatedSnake.length > 0) {
+          interpolatedSnake.pop();
+        }
+        
+        // Smoothly interpolate each segment towards target
+        for (let i = 0; i < interpolatedSnake.length && i < targetSnake.length; i++) {
+          interpolatedSnake[i].x = lerp(interpolatedSnake[i].x, targetSnake[i].x, INTERPOLATION_SPEED);
+          interpolatedSnake[i].y = lerp(interpolatedSnake[i].y, targetSnake[i].y, INTERPOLATION_SPEED);
+        }
       }
       
-      // Smoothly interpolate each segment towards target
-      for (let i = 0; i < interpolatedSnake.length && i < targetSnake.length; i++) {
-        interpolatedSnake[i].x = lerp(interpolatedSnake[i].x, targetSnake[i].x, INTERPOLATION_SPEED);
-        interpolatedSnake[i].y = lerp(interpolatedSnake[i].y, targetSnake[i].y, INTERPOLATION_SPEED);
-      }
-      
-      // Draw snake segments using interpolated positions
-      interpolatedSnake.forEach((seg, idx) => {
+      // Draw snake segments
+      snakeToRender.forEach((seg, idx) => {
         if (
           seg.x >= originX &&
           seg.x < originX + MONITOR_W &&
