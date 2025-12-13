@@ -87,12 +87,18 @@ type GameState = {
 // Utility Functions
 // ============================================================================
 
+// Convert numbers to Persian digits
+function toPersianNum(num: number | string): string {
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return String(num).replace(/[0-9]/g, (d) => persianDigits[parseInt(d)]);
+}
+
 function formatTime(ms: number): string {
-  if (!ms || ms <= 0) return "0:00";
+  if (!ms || ms <= 0) return "۰:۰۰";
   const totalSeconds = Math.ceil(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return toPersianNum(`${minutes}:${seconds.toString().padStart(2, "0")}`);
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -412,20 +418,49 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         const pCont = new PIXI.Container();
         pCont.position.set(portal.fromPos.x, portal.fromPos.y);
 
-        // Portal rings graphics (will be animated)
-        const rings = new PIXI.Graphics();
-        pCont.addChild(rings);
+        // Door frame (static)
+        const doorFrame = new PIXI.Graphics();
+        const doorWidth = 80;
+        const doorHeight = 140;
+        
+        // Outer frame glow
+        doorFrame.beginFill(THEME.portalOuter, 0.15);
+        doorFrame.drawRoundedRect(-doorWidth/2 - 10, -doorHeight/2 - 10, doorWidth + 20, doorHeight + 20, 12);
+        doorFrame.endFill();
+        
+        // Main door frame
+        doorFrame.lineStyle(4, THEME.portalOuter, 1);
+        doorFrame.beginFill(0x000000, 0.4);
+        doorFrame.drawRoundedRect(-doorWidth/2, -doorHeight/2, doorWidth, doorHeight, 8);
+        doorFrame.endFill();
+        
+        // Door arch at top
+        doorFrame.lineStyle(3, THEME.portalInner, 0.8);
+        doorFrame.arc(0, -doorHeight/2 + 20, doorWidth/2 - 5, Math.PI, 0);
+        
+        // Side pillars
+        doorFrame.lineStyle(3, THEME.portalInner, 0.6);
+        doorFrame.moveTo(-doorWidth/2 + 5, -doorHeight/2 + 20);
+        doorFrame.lineTo(-doorWidth/2 + 5, doorHeight/2 - 5);
+        doorFrame.moveTo(doorWidth/2 - 5, -doorHeight/2 + 20);
+        doorFrame.lineTo(doorWidth/2 - 5, doorHeight/2 - 5);
+        
+        pCont.addChild(doorFrame);
 
-        // Portal label
-        const label = new PIXI.Text(`→ M${portal.to}`, {
-          fontFamily: "Inter, system-ui, sans-serif",
-          fontSize: 14,
+        // Animated portal effect (will be animated in render loop)
+        const portalEffect = new PIXI.Graphics();
+        pCont.addChild(portalEffect);
+
+        // Portal label with arrow
+        const label = new PIXI.Text(`مانیتور ${portal.to} ←`, {
+          fontFamily: "Vazirmatn, Inter, system-ui, sans-serif",
+          fontSize: 16,
           fill: 0xffffff,
-          fontWeight: "600",
+          fontWeight: "700",
         });
         label.anchor.set(0.5);
-        label.y = -60;
-        label.alpha = 0.8;
+        label.y = -doorHeight/2 - 25;
+        label.alpha = 0.9;
         pCont.addChild(label);
 
         portalContainers.set(`portal-${idx}`, pCont);
@@ -439,28 +474,28 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     // ================================================================
 
     // Score display
-    const scoreText = new PIXI.Text("Score: 0", {
-      fontFamily: "Inter, system-ui, sans-serif",
+    const scoreText = new PIXI.Text("امتیاز: ۰", {
+      fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 28,
       fill: THEME.gold,
       fontWeight: "bold",
     });
-    scoreText.anchor.set(1, 0);
+    scoreText.anchor.set(0, 0); // RTL: anchor to left
     uiLayer.addChild(scoreText);
 
     // Timer display
-    const timerText = new PIXI.Text("Time: 0:00", {
-      fontFamily: "Inter, system-ui, sans-serif",
+    const timerText = new PIXI.Text("زمان: ۰:۰۰", {
+      fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 28,
       fill: THEME.text,
       fontWeight: "bold",
     });
-    timerText.anchor.set(0, 0);
+    timerText.anchor.set(1, 0); // RTL: anchor to right
     uiLayer.addChild(timerText);
 
     // Monitor label
-    const monitorLabel = new PIXI.Text(`Monitor ${monitorId}`, {
-      fontFamily: "Inter, system-ui, sans-serif",
+    const monitorLabel = new PIXI.Text(`مانیتور ${monitorId}`, {
+      fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 16,
       fill: THEME.textMuted,
       fontWeight: "600",
@@ -476,18 +511,17 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     const gameOverBg = new PIXI.Graphics();
     gameOverCont.addChild(gameOverBg);
 
-    const gameOverText = new PIXI.Text("GAME OVER", {
-      fontFamily: "Inter, system-ui, sans-serif",
+    const gameOverText = new PIXI.Text("پایان بازی", {
+      fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 72,
       fill: THEME.danger,
       fontWeight: "900",
-      letterSpacing: 4,
     });
     gameOverText.anchor.set(0.5);
     gameOverCont.addChild(gameOverText);
 
     const finalScoreText = new PIXI.Text("", {
-      fontFamily: "Inter, system-ui, sans-serif",
+      fontFamily: "Vazirmatn, system-ui, sans-serif",
       fontSize: 36,
       fill: THEME.gold,
       fontWeight: "bold",
@@ -509,31 +543,39 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       rootContainer.position.set(w / 2, h / 2);
       rootContainer.rotation = (rotation * Math.PI) / 180;
 
-      // Calculate available space
-      const screenW = isRotated ? h : w;
-      const screenH = isRotated ? w : h;
-
-      // Scale to fit (contain)
-      const scaleX = screenW / MONITOR_W;
-      const scaleY = screenH / MONITOR_H;
-      const scale = Math.min(scaleX, scaleY);
+      // For rotated monitors: game is 1920x1080, but screen is portrait
+      // We want to fill the entire screen (cover), not contain
+      let scale: number;
+      
+      if (isRotated) {
+        // Screen is portrait (e.g. 1080x1920), game is landscape (1920x1080)
+        // After rotation, we need game width to match screen height and game height to match screen width
+        const scaleX = h / MONITOR_W; // screen height matches game width
+        const scaleY = w / MONITOR_H; // screen width matches game height
+        scale = Math.max(scaleX, scaleY); // Use max for cover (fill entire screen)
+      } else {
+        // Normal landscape mode
+        const scaleX = w / MONITOR_W;
+        const scaleY = h / MONITOR_H;
+        scale = Math.max(scaleX, scaleY); // Use max for cover (fill entire screen)
+      }
 
       gameWorld.scale.set(scale);
       gameWorld.pivot.set(MONITOR_W / 2, MONITOR_H / 2);
 
-      // Position UI elements
+      // Position UI elements (always use actual screen dimensions)
       const padding = 24;
-      uiLayer.pivot.set(screenW / 2, screenH / 2);
+      uiLayer.pivot.set(w / 2, h / 2);
 
-      scoreText.position.set(screenW - padding, padding);
+      scoreText.position.set(w - padding, padding);
       timerText.position.set(padding, padding);
-      monitorLabel.position.set(screenW / 2, padding);
+      monitorLabel.position.set(w / 2, padding);
 
       // Game over overlay
-      gameOverCont.position.set(screenW / 2, screenH / 2);
+      gameOverCont.position.set(w / 2, h / 2);
       gameOverBg.clear();
       gameOverBg.beginFill(0x000000, 0.85);
-      gameOverBg.drawRect(-screenW / 2, -screenH / 2, screenW, screenH);
+      gameOverBg.drawRect(-w / 2, -h / 2, w, h);
       gameOverText.y = -50;
       finalScoreText.y = 50;
     };
@@ -657,29 +699,51 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     app.ticker.add(() => {
       tick += 0.02;
 
-      // Animate portals
+      // Animate portal door effects
       portalContainers.forEach((pCont) => {
-        const rings = pCont.children[0] as PIXI.Graphics;
-        if (rings) {
-          rings.clear();
-
-          // Outer rings
-          for (let i = 0; i < 3; i++) {
-            const radius = 30 + i * 12 + Math.sin(tick * 2 + i) * 4;
-            const alpha = 0.6 - i * 0.15;
-            rings.lineStyle(2, THEME.portalOuter, alpha);
-            rings.drawCircle(0, 0, radius);
+        // portalEffect is at index 1 (after doorFrame)
+        const portalEffect = pCont.children[1] as PIXI.Graphics;
+        if (portalEffect) {
+          portalEffect.clear();
+          
+          const doorWidth = 70;
+          const doorHeight = 130;
+          
+          // Animated swirl/vortex effect inside the door
+          const numRings = 5;
+          for (let i = 0; i < numRings; i++) {
+            const phase = tick * 3 + i * 0.5;
+            const yOffset = ((Math.sin(phase) + 1) / 2) * doorHeight - doorHeight/2;
+            const alpha = 0.3 + Math.sin(phase * 2) * 0.2;
+            const width = doorWidth - 20 - i * 8;
+            
+            portalEffect.lineStyle(2, THEME.portalInner, alpha);
+            portalEffect.moveTo(-width/2, yOffset);
+            portalEffect.bezierCurveTo(
+              -width/4, yOffset - 10 * Math.sin(tick * 2),
+              width/4, yOffset + 10 * Math.sin(tick * 2),
+              width/2, yOffset
+            );
           }
-
-          // Inner core
-          const coreSize = 18 + Math.sin(tick * 4) * 3;
-          rings.beginFill(THEME.portalCore, 0.6);
-          rings.drawCircle(0, 0, coreSize);
-          rings.endFill();
-
-          rings.beginFill(THEME.portalInner, 0.4);
-          rings.drawCircle(0, 0, coreSize * 0.6);
-          rings.endFill();
+          
+          // Glowing center particles
+          for (let i = 0; i < 8; i++) {
+            const angle = tick * 2 + i * (Math.PI / 4);
+            const radius = 15 + Math.sin(tick * 4 + i) * 8;
+            const px = Math.cos(angle) * radius;
+            const py = Math.sin(angle) * radius * 2; // Elongated vertically
+            const particleAlpha = 0.4 + Math.sin(tick * 3 + i) * 0.3;
+            
+            portalEffect.beginFill(THEME.portalInner, particleAlpha);
+            portalEffect.drawCircle(px, py, 3);
+            portalEffect.endFill();
+          }
+          
+          // Pulsing glow at center
+          const glowSize = 25 + Math.sin(tick * 4) * 8;
+          portalEffect.beginFill(THEME.portalCore, 0.2);
+          portalEffect.drawEllipse(0, 0, glowSize, glowSize * 1.5);
+          portalEffect.endFill();
         }
       });
 
@@ -688,8 +752,8 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       if (!s) return;
 
       // Update UI text
-      scoreText.text = `Score: ${s.score}`;
-      timerText.text = `Time: ${formatTime(s.timeLeftMs)}`;
+      scoreText.text = `امتیاز: ${toPersianNum(s.score)}`;
+      timerText.text = `زمان: ${formatTime(s.timeLeftMs)}`;
 
       // Timer color based on remaining time
       if (s.timeLeftMs < 30000) {
@@ -703,7 +767,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       // Game over state
       if (s.phase === "ended") {
         gameOverCont.visible = true;
-        finalScoreText.text = `Final Score: ${s.score}`;
+        finalScoreText.text = `امتیاز نهایی: ${toPersianNum(s.score)}`;
       } else {
         gameOverCont.visible = false;
       }
@@ -826,9 +890,9 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         >
           <div className="text-center animate-in p-8 max-w-2xl">
             <div className="text-9xl mb-8 animate-bounce">🐍</div>
-            <h1 className="text-6xl font-bold text-white mb-4">Snake Game</h1>
+            <h1 className="text-6xl font-bold text-white mb-4">بازی مار</h1>
             <p className="text-2xl text-slate-400 mb-12">
-              Click anywhere or press any key to start!
+              برای شروع کلیک کنید یا کلیدی را فشار دهید
             </p>
             <Button
               onClick={(e) => {
@@ -840,10 +904,10 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
               className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
             >
               <Play className="w-8 h-8" />
-              START GAME
+              شروع بازی
             </Button>
             <p className="text-lg text-slate-500 mt-8">
-              Use ↑ ↓ ← → arrow keys to control the snake
+              از کلیدهای ↑ ↓ ← → برای کنترل مار استفاده کنید
             </p>
           </div>
         </div>
@@ -854,13 +918,13 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
           <div className="text-center animate-in p-8">
             <div className="text-8xl mb-6 opacity-50">🐍</div>
-            <h1 className="text-4xl font-bold text-white mb-4">Monitor {monitorId}</h1>
+            <h1 className="text-4xl font-bold text-white mb-4">مانیتور {monitorId}</h1>
             <p className="text-xl text-slate-400">
-              Waiting for game to start...
+              در انتظار شروع بازی...
             </p>
             <div className="mt-8 flex items-center justify-center gap-2">
               <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-slate-500">Connected</span>
+              <span className="text-slate-500">متصل</span>
             </div>
           </div>
         </div>
@@ -871,9 +935,9 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
           <div className="text-center animate-in p-8 max-w-2xl">
             <div className="text-9xl mb-8">💀</div>
-            <h1 className="text-6xl font-bold text-rose-500 mb-4">GAME OVER</h1>
+            <h1 className="text-6xl font-bold text-rose-500 mb-4">پایان بازی</h1>
             <p className="text-4xl text-amber-400 mb-8">
-              Final Score: {currentScore}
+              امتیاز نهایی: {currentScore}
             </p>
             <Button
               onClick={handleResetGame}
@@ -882,7 +946,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
               className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
             >
               <Play className="w-8 h-8" />
-              PLAY AGAIN
+              بازی مجدد
             </Button>
           </div>
         </div>
@@ -893,12 +957,12 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
           <div className="text-center animate-in p-8">
             <div className="text-8xl mb-6">💀</div>
-            <h1 className="text-4xl font-bold text-rose-500 mb-4">GAME OVER</h1>
+            <h1 className="text-4xl font-bold text-rose-500 mb-4">پایان بازی</h1>
             <p className="text-2xl text-amber-400">
-              Final Score: {currentScore}
+              امتیاز نهایی: {currentScore}
             </p>
             <p className="text-lg text-slate-400 mt-8">
-              Go to Monitor 0 to play again
+              برای بازی مجدد به مانیتور ۰ بروید
             </p>
           </div>
         </div>

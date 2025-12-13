@@ -26,6 +26,7 @@ export type ServerGameState = {
   activeMonitorId: string;
   tick: number;
   lastTickTime: number;
+  lastTimerUpdate: number; // Separate tracking for accurate timer
   timeLeftMs: number;
   totalTimeMs: number;
 };
@@ -135,6 +136,8 @@ function generateMonitors(count: number): MonitorConfig[] {
       id: String(i),
       row: Math.floor(i / cols),
       col: i % cols,
+      // Alternate between horizontal (0) and vertical (90) for each monitor
+      rotationDeg: i % 2 === 0 ? 0 : 90,
     });
   }
   return monitors;
@@ -172,6 +175,7 @@ function createInitialGameState(config: GameConfig): ServerGameState {
     activeMonitorId: "0",
     tick: 0,
     lastTickTime: Date.now(),
+    lastTimerUpdate: Date.now(),
     timeLeftMs: config.timerSeconds * 1000,
     totalTimeMs: config.timerSeconds * 1000,
   };
@@ -360,18 +364,22 @@ function processTicks(state: GlobalState): void {
   if (state.game.phase !== "running") return;
   
   const now = Date.now();
-  const elapsed = now - state.game.lastTickTime;
   
-  // Update timer
-  state.game.timeLeftMs -= elapsed;
+  // Update timer using separate tracking to avoid double-counting
+  const timerElapsed = now - state.game.lastTimerUpdate;
+  state.game.timeLeftMs -= timerElapsed;
+  state.game.lastTimerUpdate = now; // Always update timer tracking
+  
   if (state.game.timeLeftMs <= 0) {
+    state.game.timeLeftMs = 0;
     state.game.phase = "ended";
     console.log('[Snake] Time up!');
     return;
   }
   
-  // Process ticks
-  const ticks = Math.floor(elapsed / state.config.tickIntervalMs);
+  // Process game ticks (movement) separately from timer
+  const tickElapsed = now - state.game.lastTickTime;
+  const ticks = Math.floor(tickElapsed / state.config.tickIntervalMs);
   if (ticks > 0) {
     const maxTicks = Math.min(ticks, 5);
     for (let i = 0; i < maxTicks; i++) {
@@ -408,6 +416,7 @@ export function startGame(): ServerGameState {
   state.game.activeMonitorId = "0";
   state.game.tick = 0;
   state.game.lastTickTime = Date.now();
+  state.game.lastTimerUpdate = Date.now();
   state.game.timeLeftMs = state.config.timerSeconds * 1000;
   state.game.totalTimeMs = state.config.timerSeconds * 1000;
   
@@ -442,6 +451,7 @@ export function resetGame(): ServerGameState {
   state.game.activeMonitorId = "0";
   state.game.tick = 0;
   state.game.lastTickTime = Date.now();
+  state.game.lastTimerUpdate = Date.now();
   state.game.timeLeftMs = state.config.timerSeconds * 1000;
   state.game.totalTimeMs = state.config.timerSeconds * 1000;
   
