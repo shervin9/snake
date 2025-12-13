@@ -68,3 +68,4 @@ Edit `game.config.json`:
 
 **After changing config**: `pm2 restart snake`
 
+

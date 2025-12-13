@@ -112,6 +112,11 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
   const appRef = useRef<PIXI.Application | null>(null);
   const stateRef = useRef<GameState | null>(null);
   const prevStateRef = useRef<GameState | null>(null);
+  
+  // Interpolation state for smooth movement
+  const interpolatedSnakeRef = useRef<{ x: number; y: number }[]>([]);
+  const lastStateUpdateRef = useRef<number>(Date.now());
+  const targetSnakeRef = useRef<{ x: number; y: number }[]>([]);
 
   const [config, setConfig] = useState<MonitorConfig | null>(null);
   const [portals, setPortals] = useState<Portal[]>([]);
@@ -154,12 +159,35 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
 
   // Poll game state
   useEffect(() => {
+    let requestId = 0;
+    let lastReceivedId = 0;
+    
     const fetchState = async () => {
+      const thisRequestId = ++requestId;
+      
       try {
         const res = await fetch("/api/state");
         const data = await res.json();
+        
+        // Skip out-of-order responses to prevent visual glitches
+        if (thisRequestId < lastReceivedId) {
+          return;
+        }
+        lastReceivedId = thisRequestId;
+        
         prevStateRef.current = stateRef.current;
         stateRef.current = data.state;
+        
+        // Update interpolation targets when new state arrives
+        if (data.state?.snake) {
+          targetSnakeRef.current = data.state.snake.map((seg: { x: number; y: number }) => ({ x: seg.x, y: seg.y }));
+          lastStateUpdateRef.current = Date.now();
+          
+          // Initialize interpolated snake if empty
+          if (interpolatedSnakeRef.current.length === 0) {
+            interpolatedSnakeRef.current = targetSnakeRef.current.map(seg => ({ ...seg }));
+          }
+        }
         setIsIdle(data.state?.phase === "idle");
         setIsEnded(data.state?.phase === "ended");
         setCurrentScore(data.state?.score ?? 0);
@@ -171,7 +199,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     fetchState();
     const interval = setInterval(fetchState, 50);
     return () => clearInterval(interval);
-  }, []);
+  }, [monitorId]);
 
   // Keyboard input for snake direction (works on all monitors during game)
   useEffect(() => {
@@ -694,8 +722,28 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
           drawFood(entityGraphics, f.x - originX, f.y - originY, tick, idx);
         });
 
-      // Draw snake segments
-      s.snake.forEach((seg, idx) => {
+      // Interpolate snake towards target positions for smooth movement
+      const INTERPOLATION_SPEED = 0.25; // Lerp factor per frame (0.0-1.0, higher = faster)
+      const targetSnake = targetSnakeRef.current;
+      const interpolatedSnake = interpolatedSnakeRef.current;
+      
+      // Adjust interpolated snake length to match target
+      while (interpolatedSnake.length < targetSnake.length) {
+        const lastSeg = interpolatedSnake[interpolatedSnake.length - 1] || targetSnake[interpolatedSnake.length];
+        interpolatedSnake.push({ x: lastSeg.x, y: lastSeg.y });
+      }
+      while (interpolatedSnake.length > targetSnake.length && interpolatedSnake.length > 0) {
+        interpolatedSnake.pop();
+      }
+      
+      // Smoothly interpolate each segment towards target
+      for (let i = 0; i < interpolatedSnake.length && i < targetSnake.length; i++) {
+        interpolatedSnake[i].x = lerp(interpolatedSnake[i].x, targetSnake[i].x, INTERPOLATION_SPEED);
+        interpolatedSnake[i].y = lerp(interpolatedSnake[i].y, targetSnake[i].y, INTERPOLATION_SPEED);
+      }
+      
+      // Draw snake segments using interpolated positions
+      interpolatedSnake.forEach((seg, idx) => {
         if (
           seg.x >= originX &&
           seg.x < originX + MONITOR_W &&
@@ -707,7 +755,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
             seg.x - originX,
             seg.y - originY,
             idx,
-            s.snake.length,
+            interpolatedSnake.length,
             s.dir
           );
         }
