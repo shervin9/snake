@@ -418,48 +418,19 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         const pCont = new PIXI.Container();
         pCont.position.set(portal.fromPos.x, portal.fromPos.y);
 
-        // Door frame (static)
-        const doorFrame = new PIXI.Graphics();
-        const doorWidth = 80;
-        const doorHeight = 140;
-        
-        // Outer frame glow
-        doorFrame.beginFill(THEME.portalOuter, 0.15);
-        doorFrame.drawRoundedRect(-doorWidth/2 - 10, -doorHeight/2 - 10, doorWidth + 20, doorHeight + 20, 12);
-        doorFrame.endFill();
-        
-        // Main door frame
-        doorFrame.lineStyle(4, THEME.portalOuter, 1);
-        doorFrame.beginFill(0x000000, 0.4);
-        doorFrame.drawRoundedRect(-doorWidth/2, -doorHeight/2, doorWidth, doorHeight, 8);
-        doorFrame.endFill();
-        
-        // Door arch at top
-        doorFrame.lineStyle(3, THEME.portalInner, 0.8);
-        doorFrame.arc(0, -doorHeight/2 + 20, doorWidth/2 - 5, Math.PI, 0);
-        
-        // Side pillars
-        doorFrame.lineStyle(3, THEME.portalInner, 0.6);
-        doorFrame.moveTo(-doorWidth/2 + 5, -doorHeight/2 + 20);
-        doorFrame.lineTo(-doorWidth/2 + 5, doorHeight/2 - 5);
-        doorFrame.moveTo(doorWidth/2 - 5, -doorHeight/2 + 20);
-        doorFrame.lineTo(doorWidth/2 - 5, doorHeight/2 - 5);
-        
-        pCont.addChild(doorFrame);
+        // Portal graphics (will be animated)
+        const portalGraphics = new PIXI.Graphics();
+        pCont.addChild(portalGraphics);
 
-        // Animated portal effect (will be animated in render loop)
-        const portalEffect = new PIXI.Graphics();
-        pCont.addChild(portalEffect);
-
-        // Portal label with arrow
-        const label = new PIXI.Text(`مانیتور ${portal.to} ←`, {
-          fontFamily: "Vazirmatn, Inter, system-ui, sans-serif",
-          fontSize: 16,
+        // Portal label
+        const label = new PIXI.Text(`← مانیتور ${portal.to}`, {
+          fontFamily: "Vazirmatn, system-ui, sans-serif",
+          fontSize: 18,
           fill: 0xffffff,
           fontWeight: "700",
         });
         label.anchor.set(0.5);
-        label.y = -doorHeight/2 - 25;
+        label.y = -70;
         label.alpha = 0.9;
         pCont.addChild(label);
 
@@ -543,21 +514,19 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       rootContainer.position.set(w / 2, h / 2);
       rootContainer.rotation = (rotation * Math.PI) / 180;
 
-      // For rotated monitors: game is 1920x1080, but screen is portrait
-      // We want to fill the entire screen (cover), not contain
+      // Scale to fit (contain) - entire game visible, maintains aspect ratio
       let scale: number;
       
       if (isRotated) {
-        // Screen is portrait (e.g. 1080x1920), game is landscape (1920x1080)
-        // After rotation, we need game width to match screen height and game height to match screen width
-        const scaleX = h / MONITOR_W; // screen height matches game width
-        const scaleY = w / MONITOR_H; // screen width matches game height
-        scale = Math.max(scaleX, scaleY); // Use max for cover (fill entire screen)
+        // For rotated monitors: swap dimensions
+        const scaleX = h / MONITOR_W;
+        const scaleY = w / MONITOR_H;
+        scale = Math.min(scaleX, scaleY); // Use min for contain (all visible)
       } else {
         // Normal landscape mode
         const scaleX = w / MONITOR_W;
         const scaleY = h / MONITOR_H;
-        scale = Math.max(scaleX, scaleY); // Use max for cover (fill entire screen)
+        scale = Math.min(scaleX, scaleY); // Use min for contain (all visible)
       }
 
       gameWorld.scale.set(scale);
@@ -699,51 +668,50 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     app.ticker.add(() => {
       tick += 0.02;
 
-      // Animate portal door effects
+      // Animate portals with clean circular design
       portalContainers.forEach((pCont) => {
-        // portalEffect is at index 1 (after doorFrame)
-        const portalEffect = pCont.children[1] as PIXI.Graphics;
-        if (portalEffect) {
-          portalEffect.clear();
+        const g = pCont.children[0] as PIXI.Graphics;
+        if (g) {
+          g.clear();
           
-          const doorWidth = 70;
-          const doorHeight = 130;
+          // Outer glow ring
+          const glowRadius = 55 + Math.sin(tick * 2) * 5;
+          g.beginFill(THEME.portalOuter, 0.15);
+          g.drawCircle(0, 0, glowRadius);
+          g.endFill();
           
-          // Animated swirl/vortex effect inside the door
-          const numRings = 5;
-          for (let i = 0; i < numRings; i++) {
-            const phase = tick * 3 + i * 0.5;
-            const yOffset = ((Math.sin(phase) + 1) / 2) * doorHeight - doorHeight/2;
-            const alpha = 0.3 + Math.sin(phase * 2) * 0.2;
-            const width = doorWidth - 20 - i * 8;
-            
-            portalEffect.lineStyle(2, THEME.portalInner, alpha);
-            portalEffect.moveTo(-width/2, yOffset);
-            portalEffect.bezierCurveTo(
-              -width/4, yOffset - 10 * Math.sin(tick * 2),
-              width/4, yOffset + 10 * Math.sin(tick * 2),
-              width/2, yOffset
-            );
+          // Main portal rings (animated)
+          for (let i = 0; i < 3; i++) {
+            const radius = 35 + i * 10 + Math.sin(tick * 2.5 + i * 0.7) * 3;
+            const alpha = 0.7 - i * 0.15;
+            const lineWidth = 3 - i * 0.5;
+            g.lineStyle(lineWidth, THEME.portalOuter, alpha);
+            g.drawCircle(0, 0, radius);
           }
           
-          // Glowing center particles
-          for (let i = 0; i < 8; i++) {
-            const angle = tick * 2 + i * (Math.PI / 4);
-            const radius = 15 + Math.sin(tick * 4 + i) * 8;
-            const px = Math.cos(angle) * radius;
-            const py = Math.sin(angle) * radius * 2; // Elongated vertically
-            const particleAlpha = 0.4 + Math.sin(tick * 3 + i) * 0.3;
-            
-            portalEffect.beginFill(THEME.portalInner, particleAlpha);
-            portalEffect.drawCircle(px, py, 3);
-            portalEffect.endFill();
-          }
+          // Inner core with gradient effect
+          const coreSize = 25 + Math.sin(tick * 4) * 4;
+          g.beginFill(THEME.portalCore, 0.5);
+          g.drawCircle(0, 0, coreSize);
+          g.endFill();
           
-          // Pulsing glow at center
-          const glowSize = 25 + Math.sin(tick * 4) * 8;
-          portalEffect.beginFill(THEME.portalCore, 0.2);
-          portalEffect.drawEllipse(0, 0, glowSize, glowSize * 1.5);
-          portalEffect.endFill();
+          // Bright center
+          g.beginFill(THEME.portalInner, 0.6);
+          g.drawCircle(0, 0, coreSize * 0.5);
+          g.endFill();
+          
+          // Rotating particles around portal
+          for (let i = 0; i < 6; i++) {
+            const angle = tick * 1.5 + i * (Math.PI / 3);
+            const dist = 45 + Math.sin(tick * 3 + i) * 5;
+            const px = Math.cos(angle) * dist;
+            const py = Math.sin(angle) * dist;
+            const particleSize = 4 + Math.sin(tick * 4 + i * 2) * 2;
+            
+            g.beginFill(THEME.portalInner, 0.7);
+            g.drawCircle(px, py, particleSize);
+            g.endFill();
+          }
         }
       });
 
