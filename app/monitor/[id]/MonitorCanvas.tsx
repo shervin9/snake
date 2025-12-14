@@ -18,15 +18,17 @@ const CELL = 30;
 
 // Modern color theme
 const THEME = {
-  // Background
-  bg: 0x0f172a, // slate-900
-  bgGradientStart: 0x1e293b, // slate-800
-  bgGradientEnd: 0x0f172a, // slate-900
+  // Background - different for horizontal and vertical monitors
+  bgHorizontal: 0x0f4135, // سبز تیره برای مانیتورهای افقی
+  bgVertical: 0x710013,   // قرمز برای مانیتورهای عمودی
+  bg: 0x0f4135, // default fallback (green)
+  bgGradientStart: 0x1a5a4a, // lighter green
+  bgGradientEnd: 0x0f4135, // dark green
 
   // Grid
-  grid: 0x334155, // slate-700
-  gridStrong: 0x475569, // slate-600
-  gridAccent: 0x10b981, // emerald-500
+  grid: 0xffffff, // white for visibility
+  gridStrong: 0xffffff, // white
+  gridAccent: 0xffffff, // white accent
 
   // Snake
   snakeHead: 0x10b981, // emerald-500
@@ -132,6 +134,16 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [currentScore, setCurrentScore] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isTabVisible, setIsTabVisible] = useState(true);
+
+  // Track tab visibility to pause polling/rendering when hidden (saves resources)
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsTabVisible(!document.hidden);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
 
   // Fetch config and portals
   useEffect(() => {
@@ -163,61 +175,105 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     fetchData();
   }, [monitorId]);
 
-  // Poll game state
+  // Use Server-Sent Events (SSE) for real-time state updates
+  // Much more efficient than polling - server pushes updates
   useEffect(() => {
-    let requestId = 0;
-    let lastReceivedId = 0;
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let isConnecting = false;
     
-    const fetchState = async () => {
-      const thisRequestId = ++requestId;
+    const connect = () => {
+      // Skip if tab is hidden
+      if (!isTabVisible) return;
+      if (isConnecting) return;
       
-      try {
-        const res = await fetch("/api/state");
-        const data = await res.json();
-        
-        // Skip out-of-order responses to prevent visual glitches
-        if (thisRequestId < lastReceivedId) {
-          return;
-        }
-        lastReceivedId = thisRequestId;
-        
-        prevStateRef.current = stateRef.current;
-        stateRef.current = data.state;
-        
-        // Update interpolation targets when new state arrives
-        if (data.state?.snake) {
-          targetSnakeRef.current = data.state.snake.map((seg: { x: number; y: number }) => ({ x: seg.x, y: seg.y }));
-          lastStateUpdateRef.current = Date.now();
+      isConnecting = true;
+      eventSource = new EventSource('/api/state/stream');
+      
+      eventSource.onopen = () => {
+        isConnecting = false;
+        console.log(`[Monitor ${monitorId}] SSE connected`);
+      };
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
           
-          // Initialize interpolated snake if empty
-          if (interpolatedSnakeRef.current.length === 0) {
-            interpolatedSnakeRef.current = targetSnakeRef.current.map(seg => ({ ...seg }));
+          prevStateRef.current = stateRef.current;
+          stateRef.current = data.state;
+          
+          // Update interpolation targets when new state arrives
+          if (data.state?.snake) {
+            targetSnakeRef.current = data.state.snake.map((seg: { x: number; y: number }) => ({ x: seg.x, y: seg.y }));
+            lastStateUpdateRef.current = Date.now();
+            
+            // Initialize interpolated snake if empty
+            if (interpolatedSnakeRef.current.length === 0) {
+              interpolatedSnakeRef.current = targetSnakeRef.current.map(seg => ({ ...seg }));
+            }
           }
+          setIsIdle(data.state?.phase === "idle");
+          setIsEnded(data.state?.phase === "ended");
+          setCurrentScore(data.state?.score ?? 0);
+          setCurrentTime(data.state?.timeLeftMs ?? 0);
+        } catch (err) {
+          // Silent fail for parse errors
         }
-        setIsIdle(data.state?.phase === "idle");
-        setIsEnded(data.state?.phase === "ended");
-        setCurrentScore(data.state?.score ?? 0);
-        setCurrentTime(data.state?.timeLeftMs ?? 0);
-      } catch (err) {
-        // Silent fail for polling
+      };
+      
+      eventSource.onerror = () => {
+        isConnecting = false;
+        eventSource?.close();
+        eventSource = null;
+        
+        // Reconnect after 1 second
+        reconnectTimeout = setTimeout(connect, 1000);
+      };
+    };
+    
+    connect();
+    
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
       }
     };
-    fetchState();
-    const interval = setInterval(fetchState, 50);
-    return () => clearInterval(interval);
-  }, [monitorId]);
+  }, [monitorId, isTabVisible]);
 
-  // Keyboard input for snake direction (works on all monitors during game)
+  // Keyboard input for snake direction
+  // تبدیل جهت بر اساس مانیتوری که مار الان توشه (activeMonitorId)
   useEffect(() => {
     const sendInput = async (direction: "up" | "down" | "left" | "right") => {
       // Only send input if game is running
       if (stateRef.current?.phase !== "running") return;
       
+      // Get the monitor that the snake is currently on
+      const activeMonitor = stateRef.current?.activeMonitorId || "0";
+      
+      // Check if snake is on a vertical monitor (1, 3, 5)
+      const isOnVerticalMonitor = ["1", "3", "5"].includes(activeMonitor);
+      
+      let finalDir = direction;
+      
+      // Transform direction if snake is on a vertical monitor
+      // This makes controls intuitive relative to that monitor's orientation
+      if (isOnVerticalMonitor) {
+        const map: Record<string, "up" | "down" | "left" | "right"> = {
+          up: "left",
+          down: "right",
+          left: "down",
+          right: "up"
+        };
+        finalDir = map[direction];
+      }
+      
       try {
         await fetch("/api/state/input", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ direction }),
+          body: JSON.stringify({ direction: finalDir }),
         });
       } catch (err) {
         console.error("Failed to send input:", err);
@@ -227,13 +283,14 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     const handleKey = (e: KeyboardEvent) => {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         e.preventDefault();
+        e.stopPropagation();
         const dir = e.key.replace("Arrow", "").toLowerCase() as "up" | "down" | "left" | "right";
         sendInput(dir);
       }
     };
 
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    document.addEventListener("keydown", handleKey, true);
+    return () => document.removeEventListener("keydown", handleKey, true);
   }, []);
 
   // Start game handler
@@ -302,13 +359,22 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
   useEffect(() => {
     if (!containerRef.current || !config) return;
 
-    // Create PIXI Application
+    // Create PIXI Application with optimized settings
+    // Cap resolution at 1.5 for better performance on high-DPI displays
+    const maxResolution = 1.5;
+    const deviceRatio = window.devicePixelRatio || 1;
+    const resolution = Math.min(deviceRatio, maxResolution);
+    
+    // Choose background color based on monitor type
+    const isVerticalMonitor = ["1", "3", "5"].includes(monitorId);
+    const bgColor = isVerticalMonitor ? THEME.bgVertical : THEME.bgHorizontal;
+    
     const app = new PIXI.Application({
       resizeTo: containerRef.current,
-      backgroundColor: THEME.bg,
-      antialias: true,
+      backgroundColor: bgColor,
+      antialias: resolution >= 1.5, // Only enable antialiasing on higher resolution
       autoDensity: true,
-      resolution: window.devicePixelRatio || 1,
+      resolution,
     });
     containerRef.current.appendChild(app.view as HTMLCanvasElement);
     appRef.current = app;
@@ -344,30 +410,29 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     const drawBackground = () => {
       bgLayer.removeChildren();
 
+      // Choose background color based on monitor type
+      // Vertical monitors (1, 3, 5): red/maroon
+      // Horizontal monitors (0, 2, 4): green
+      const isVerticalMonitor = ["1", "3", "5"].includes(monitorId);
+      const bgColor = isVerticalMonitor ? THEME.bgVertical : THEME.bgHorizontal;
+
       // Main background
       const bg = new PIXI.Graphics();
-      bg.beginFill(THEME.bg);
+      bg.beginFill(bgColor);
       bg.drawRect(0, 0, MONITOR_W, MONITOR_H);
       bg.endFill();
       bgLayer.addChild(bg);
 
-      // Gradient overlay
-      const gradient = new PIXI.Graphics();
-      gradient.beginFill(THEME.bgGradientStart, 0.3);
-      gradient.drawRect(0, 0, MONITOR_W, MONITOR_H / 3);
-      gradient.endFill();
-      bgLayer.addChild(gradient);
-
-      // Subtle grid dots pattern
-      for (let x = CELL; x < MONITOR_W; x += CELL * 2) {
-        for (let y = CELL; y < MONITOR_H; y += CELL * 2) {
-          const dot = new PIXI.Graphics();
-          dot.beginFill(THEME.grid, 0.2);
-          dot.drawCircle(x, y, 1);
-          dot.endFill();
-          bgLayer.addChild(dot);
+      // Subtle grid dots pattern (optimized: single Graphics object, wider spacing)
+      const dots = new PIXI.Graphics();
+      dots.beginFill(0xffffff, 0.1);
+      for (let x = CELL; x < MONITOR_W; x += CELL * 4) {
+        for (let y = CELL; y < MONITOR_H; y += CELL * 4) {
+          dots.drawCircle(x, y, 1);
         }
       }
+      dots.endFill();
+      bgLayer.addChild(dots);
     };
     drawBackground();
 
@@ -422,17 +487,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         const portalGraphics = new PIXI.Graphics();
         pCont.addChild(portalGraphics);
 
-        // Portal label
-        const label = new PIXI.Text(`← مانیتور ${portal.to}`, {
-          fontFamily: "Vazirmatn, system-ui, sans-serif",
-          fontSize: 18,
-          fill: 0xffffff,
-          fontWeight: "700",
-        });
-        label.anchor.set(0.5);
-        label.y = -70;
-        label.alpha = 0.9;
-        pCont.addChild(label);
+        // Portal label removed - no text above portals
 
         portalContainers.set(`portal-${idx}`, pCont);
         portalLayer.addChild(pCont);
@@ -539,7 +594,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       // Score on right, timer on left (RTL layout)
       scoreText.position.set(w - padding, padding);
       timerText.position.set(padding, padding);
-      monitorLabel.position.set(w / 2, h - padding - 20);
+      monitorLabel.position.set(w / 2, h - padding - 40);
 
       // Game over overlay
       gameOverCont.position.set(w / 2, h / 2);
@@ -560,7 +615,7 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     const entityGraphics = new PIXI.Graphics();
     entityLayer.addChild(entityGraphics);
 
-    // Draw snake segment with modern styling
+    // Draw snake segment with optimized styling (uses rects instead of rounded rects for performance)
     const drawSnakeSegment = (
       g: PIXI.Graphics,
       x: number,
@@ -570,69 +625,37 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       dir: string
     ) => {
       const isHead = index === 0;
-      const isTail = index === total - 1;
-      
-      // Calculate segment appearance based on position
-      const t = index / Math.max(1, total - 1);
       
       if (isHead) {
-        // Head with glow effect
+        // Head - simple filled rectangle
         g.beginFill(THEME.snakeHead);
-        g.drawRoundedRect(
-          x - CELL / 2 + 1,
-          y - CELL / 2 + 1,
-          CELL - 2,
-          CELL - 2,
-          8
-        );
+        g.drawRect(x - CELL / 2 + 1, y - CELL / 2 + 1, CELL - 2, CELL - 2);
         g.endFill();
 
-        // Eyes
+        // Eyes (simplified - just two white dots)
         const eyeOffset = CELL * 0.25;
-        let lx = x - eyeOffset,
-          ly = y - eyeOffset;
-        let rx = x + eyeOffset,
-          ry = y - eyeOffset;
+        let lx = x - eyeOffset, ly = y - eyeOffset;
+        let rx = x + eyeOffset, ry = y - eyeOffset;
 
-        if (dir === "down") {
-          ly = y + eyeOffset;
-          ry = y + eyeOffset;
-        } else if (dir === "left") {
-          lx = x - eyeOffset;
-          ly = y - eyeOffset;
-          rx = x - eyeOffset;
-          ry = y + eyeOffset;
-        } else if (dir === "right") {
-          lx = x + eyeOffset;
-          ly = y - eyeOffset;
-          rx = x + eyeOffset;
-          ry = y + eyeOffset;
-        }
+        if (dir === "down") { ly = y + eyeOffset; ry = y + eyeOffset; }
+        else if (dir === "left") { lx = x - eyeOffset; ly = y - eyeOffset; rx = x - eyeOffset; ry = y + eyeOffset; }
+        else if (dir === "right") { lx = x + eyeOffset; ly = y - eyeOffset; rx = x + eyeOffset; ry = y + eyeOffset; }
 
-        // Eye whites
         g.beginFill(0xffffff);
-        g.drawCircle(lx, ly, 5);
-        g.drawCircle(rx, ry, 5);
-        g.endFill();
-
-        // Pupils
-        g.beginFill(0x0f172a);
-        g.drawCircle(lx, ly, 2);
-        g.drawCircle(rx, ry, 2);
+        g.drawCircle(lx, ly, 4);
+        g.drawCircle(rx, ry, 4);
         g.endFill();
       } else {
-        // Body segment with gradient effect
-        const color = isTail ? THEME.snakeTail : index % 2 === 0 ? THEME.snakeBody : THEME.snakeBodyAlt;
-        const size = lerp(CELL - 4, CELL - 8, t);
-        const offset = (CELL - size) / 2;
-
+        // Body segment - alternating colors, simple rectangles
+        const color = index % 2 === 0 ? THEME.snakeBody : THEME.snakeBodyAlt;
+        const margin = 2;
         g.beginFill(color);
-        g.drawRoundedRect(x - CELL / 2 + offset, y - CELL / 2 + offset, size, size, 4);
+        g.drawRect(x - CELL / 2 + margin, y - CELL / 2 + margin, CELL - margin * 2, CELL - margin * 2);
         g.endFill();
       }
     };
 
-    // Draw food with pulsing animation
+    // Draw food with simplified animation (optimized for performance)
     const drawFood = (
       g: PIXI.Graphics,
       x: number,
@@ -640,23 +663,13 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
       tick: number,
       index: number
     ) => {
-      const pulse = 1 + Math.sin(tick * 3 + index * 0.5) * 0.15;
+      const pulse = 1 + Math.sin(tick * 2 + index) * 0.1;
       const size = 10 * pulse;
       const color = index % 2 === 0 ? THEME.food : THEME.foodAlt;
 
-      // Glow
-      g.beginFill(color, 0.2);
-      g.drawCircle(x, y, size + 8);
-      g.endFill();
-
-      // Main food circle
+      // Single circle for food (no glow/highlight for performance)
       g.beginFill(color);
       g.drawCircle(x, y, size);
-      g.endFill();
-
-      // Highlight
-      g.beginFill(0xffffff, 0.4);
-      g.drawCircle(x - 3, y - 3, size * 0.3);
       g.endFill();
     };
 
@@ -666,55 +679,69 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
 
     let tick = 0;
 
+    let frameCount = 0;
+    
     app.ticker.add(() => {
       tick += 0.02;
+      frameCount++;
+      
+      // Get current game phase for optimizations
+      const currentPhase = stateRef.current?.phase;
+      const isGameActive = currentPhase === "running";
+      
+      // Skip portal animation every other frame when game is not active (saves GPU)
+      const shouldAnimatePortals = isGameActive || frameCount % 2 === 0;
 
-      // Animate portals with clean circular design
-      portalContainers.forEach((pCont) => {
-        const g = pCont.children[0] as PIXI.Graphics;
-        if (g) {
-          g.clear();
-          
-          // Outer glow ring
-          const glowRadius = 55 + Math.sin(tick * 2) * 5;
-          g.beginFill(THEME.portalOuter, 0.15);
-          g.drawCircle(0, 0, glowRadius);
-          g.endFill();
-          
-          // Main portal rings (animated)
-          for (let i = 0; i < 3; i++) {
-            const radius = 35 + i * 10 + Math.sin(tick * 2.5 + i * 0.7) * 3;
-            const alpha = 0.7 - i * 0.15;
-            const lineWidth = 3 - i * 0.5;
-            g.lineStyle(lineWidth, THEME.portalOuter, alpha);
-            g.drawCircle(0, 0, radius);
-          }
-          
-          // Inner core with gradient effect
-          const coreSize = 25 + Math.sin(tick * 4) * 4;
-          g.beginFill(THEME.portalCore, 0.5);
-          g.drawCircle(0, 0, coreSize);
-          g.endFill();
-          
-          // Bright center
-          g.beginFill(THEME.portalInner, 0.6);
-          g.drawCircle(0, 0, coreSize * 0.5);
-          g.endFill();
-          
-          // Rotating particles around portal
-          for (let i = 0; i < 6; i++) {
-            const angle = tick * 1.5 + i * (Math.PI / 3);
-            const dist = 45 + Math.sin(tick * 3 + i) * 5;
-            const px = Math.cos(angle) * dist;
-            const py = Math.sin(angle) * dist;
-            const particleSize = 4 + Math.sin(tick * 4 + i * 2) * 2;
+      // Animate portals with clean circular design (simplified when idle)
+      if (shouldAnimatePortals) {
+        portalContainers.forEach((pCont) => {
+          const g = pCont.children[0] as PIXI.Graphics;
+          if (g) {
+            g.clear();
             
-            g.beginFill(THEME.portalInner, 0.7);
-            g.drawCircle(px, py, particleSize);
+            // Outer glow ring
+            const glowRadius = 55 + Math.sin(tick * 2) * 5;
+            g.beginFill(THEME.portalOuter, 0.15);
+            g.drawCircle(0, 0, glowRadius);
             g.endFill();
+            
+            // Main portal rings (fewer when idle)
+            const ringCount = isGameActive ? 3 : 2;
+            for (let i = 0; i < ringCount; i++) {
+              const radius = 35 + i * 10 + Math.sin(tick * 2.5 + i * 0.7) * 3;
+              const alpha = 0.7 - i * 0.15;
+              const lineWidth = 3 - i * 0.5;
+              g.lineStyle(lineWidth, THEME.portalOuter, alpha);
+              g.drawCircle(0, 0, radius);
+            }
+            
+            // Inner core with gradient effect
+            const coreSize = 25 + Math.sin(tick * 4) * 4;
+            g.beginFill(THEME.portalCore, 0.5);
+            g.drawCircle(0, 0, coreSize);
+            g.endFill();
+            
+            // Bright center
+            g.beginFill(THEME.portalInner, 0.6);
+            g.drawCircle(0, 0, coreSize * 0.5);
+            g.endFill();
+            
+            // Rotating particles (fewer when idle, skip entirely when ended)
+            const particleCount = isGameActive ? 6 : (currentPhase === "idle" ? 3 : 0);
+            for (let i = 0; i < particleCount; i++) {
+              const angle = tick * 1.5 + i * (Math.PI * 2 / particleCount);
+              const dist = 45 + Math.sin(tick * 3 + i) * 5;
+              const px = Math.cos(angle) * dist;
+              const py = Math.sin(angle) * dist;
+              const particleSize = 4 + Math.sin(tick * 4 + i * 2) * 2;
+              
+              g.beginFill(THEME.portalInner, 0.7);
+              g.drawCircle(px, py, particleSize);
+              g.endFill();
+            }
           }
-        }
-      });
+        });
+      }
 
       // Get current state
       const s = stateRef.current;
@@ -756,7 +783,16 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
         });
 
       // Interpolate snake towards target positions for smooth movement
-      const INTERPOLATION_SPEED = 0.25; // Lerp factor per frame (0.0-1.0, higher = faster)
+      // Time-based interpolation for consistent smoothness regardless of frame rate
+      const now = Date.now();
+      const timeSinceUpdate = now - lastStateUpdateRef.current;
+      const UPDATE_INTERVAL = 60; // Match SSE update interval
+      
+      // Calculate lerp factor based on time - complete interpolation before next update
+      // Use easing for smoother movement
+      const rawProgress = Math.min(timeSinceUpdate / UPDATE_INTERVAL, 1);
+      const INTERPOLATION_SPEED = easeOutQuad(rawProgress) * 0.4 + 0.1; // Range 0.1-0.5 with easing
+      
       const targetSnake = targetSnakeRef.current;
       const interpolatedSnake = interpolatedSnakeRef.current;
       
@@ -776,10 +812,19 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
           interpolatedSnake.pop();
         }
         
-        // Smoothly interpolate each segment towards target
+        // Smoothly interpolate each segment towards target with time-based factor
         for (let i = 0; i < interpolatedSnake.length && i < targetSnake.length; i++) {
-          interpolatedSnake[i].x = lerp(interpolatedSnake[i].x, targetSnake[i].x, INTERPOLATION_SPEED);
-          interpolatedSnake[i].y = lerp(interpolatedSnake[i].y, targetSnake[i].y, INTERPOLATION_SPEED);
+          const dx = targetSnake[i].x - interpolatedSnake[i].x;
+          const dy = targetSnake[i].y - interpolatedSnake[i].y;
+          
+          // Snap to target if very close (avoid jitter)
+          if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
+            interpolatedSnake[i].x = targetSnake[i].x;
+            interpolatedSnake[i].y = targetSnake[i].y;
+          } else {
+            interpolatedSnake[i].x = lerp(interpolatedSnake[i].x, targetSnake[i].x, INTERPOLATION_SPEED);
+            interpolatedSnake[i].y = lerp(interpolatedSnake[i].y, targetSnake[i].y, INTERPOLATION_SPEED);
+          }
         }
       }
       
@@ -810,6 +855,18 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     };
   }, [config, monitorId, portals]);
 
+  // Pause/resume PIXI ticker based on tab visibility (saves CPU/GPU)
+  useEffect(() => {
+    const app = appRef.current;
+    if (!app) return;
+    
+    if (isTabVisible) {
+      app.ticker.start();
+    } else {
+      app.ticker.stop();
+    }
+  }, [isTabVisible]);
+
   // Focus container on load
   useEffect(() => {
     if (containerRef.current) {
@@ -822,26 +879,34 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
   // ============================================================================
 
   if (loading) {
+    const isVerticalMonitor = ["1", "3", "5"].includes(monitorId);
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-slate-900">
+      <div 
+        className="w-screen h-screen flex items-center justify-center"
+        style={{ backgroundColor: isVerticalMonitor ? '#710013' : '#0f4135' }}
+      >
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading monitor {monitorId}...</p>
+          <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/70">Loading...</p>
         </div>
       </div>
     );
   }
 
   if (error || !config) {
+    const isVerticalMonitor = ["1", "3", "5"].includes(monitorId);
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-slate-900 p-4">
-        <Card className="max-w-md bg-slate-800/80 border-slate-700/50">
+      <div 
+        className="w-screen h-screen flex items-center justify-center p-4"
+        style={{ backgroundColor: isVerticalMonitor ? '#710013' : '#0f4135' }}
+      >
+        <Card className="max-w-md bg-black/30 border-white/20">
           <CardContent className="p-8 text-center">
-            <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-8 h-8 text-rose-400" />
+            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-amber-400" />
             </div>
             <h2 className="text-xl font-bold text-white mb-2">Connection Error</h2>
-            <p className="text-slate-400 mb-4">
+            <p className="text-white/70 mb-4">
               {error || "Monitor not found in configuration"}
             </p>
             <Badge variant="secondary" className="font-mono">
@@ -853,22 +918,27 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     );
   }
 
+  // Main container - color is handled by PIXI canvas
+  const isVerticalMonitor = ["1", "3", "5"].includes(monitorId);
+  
   return (
     <div
       ref={containerRef}
       tabIndex={0}
-      className="w-screen h-screen overflow-hidden outline-none relative bg-slate-900"
+      className="w-screen h-screen overflow-hidden outline-none relative"
+      style={{ backgroundColor: isVerticalMonitor ? '#710013' : '#0f4135' }}
     >
       {/* Start Game Overlay (only on monitor 0 when idle) */}
       {monitorId === "0" && isIdle && (
         <div 
-          className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md cursor-pointer"
+          className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-md cursor-pointer"
+          style={{ backgroundColor: 'rgba(15, 65, 53, 0.95)' }}
           onClick={handleStartGame}
         >
           <div className="text-center animate-in p-8 max-w-2xl">
             <div className="text-9xl mb-8 animate-bounce">🐍</div>
-            <h1 className="text-6xl font-bold text-white mb-4">بازی مار</h1>
-            <p className="text-2xl text-slate-400 mb-12">
+            <h1 className="text-6xl font-bold text-white mb-4">Snake Clash</h1>
+            <p className="text-2xl text-emerald-200 mb-12">
               برای شروع کلیک کنید یا کلیدی را فشار دهید
             </p>
             <Button
@@ -878,30 +948,37 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
               }}
               variant="gradient"
               size="xl"
-              className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
+              className="gap-4 text-2xl px-16 py-8 shadow-2xl bg-emerald-600 hover:bg-emerald-500 transition-all"
             >
               <Play className="w-8 h-8" />
               شروع بازی
             </Button>
-            <p className="text-lg text-slate-500 mt-8">
+            <p className="text-lg text-emerald-300 mt-8">
               از کلیدهای ↑ ↓ ← → برای کنترل مار استفاده کنید
             </p>
           </div>
         </div>
       )}
 
-      {/* Waiting Overlay (other monitors when idle) */}
+      {/* Waiting Overlay (other monitors when idle) - color based on monitor type */}
       {monitorId !== "0" && isIdle && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-md"
+          style={{ 
+            backgroundColor: ["1", "3", "5"].includes(monitorId) 
+              ? 'rgba(113, 0, 19, 0.95)' 
+              : 'rgba(15, 65, 53, 0.95)' 
+          }}
+        >
           <div className="text-center animate-in p-8">
-            <div className="text-8xl mb-6 opacity-50">🐍</div>
-            <h1 className="text-4xl font-bold text-white mb-4">مانیتور {monitorId}</h1>
-            <p className="text-xl text-slate-400">
+            <div className="text-8xl mb-6 opacity-70">🐍</div>
+            <h1 className="text-4xl font-bold text-white mb-4">Snake Clash</h1>
+            <p className="text-xl text-white/70">
               در انتظار شروع بازی...
             </p>
             <div className="mt-8 flex items-center justify-center gap-2">
-              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-slate-500">متصل</span>
+              <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              <span className="text-white/60">متصل</span>
             </div>
           </div>
         </div>
@@ -909,18 +986,21 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
 
       {/* Game Over Overlay (on monitor 0 when ended) */}
       {monitorId === "0" && isEnded && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-md"
+          style={{ backgroundColor: 'rgba(113, 0, 19, 0.95)' }}
+        >
           <div className="text-center animate-in p-8 max-w-2xl">
             <div className="text-9xl mb-8">💀</div>
-            <h1 className="text-6xl font-bold text-rose-500 mb-4">پایان بازی</h1>
-            <p className="text-4xl text-amber-400 mb-8">
+            <h1 className="text-6xl font-bold text-white mb-4">پایان بازی</h1>
+            <p className="text-4xl text-amber-300 mb-8">
               امتیاز نهایی: {currentScore}
             </p>
             <Button
               onClick={handleResetGame}
               variant="gradient"
               size="xl"
-              className="gap-4 text-2xl px-16 py-8 shadow-2xl shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all"
+              className="gap-4 text-2xl px-16 py-8 shadow-2xl bg-emerald-600 hover:bg-emerald-500 transition-all"
             >
               <Play className="w-8 h-8" />
               بازی مجدد
@@ -931,29 +1011,36 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
 
       {/* Game Over Overlay (other monitors when ended) */}
       {monitorId !== "0" && isEnded && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-md"
+          style={{ 
+            backgroundColor: ["1", "3", "5"].includes(monitorId) 
+              ? 'rgba(113, 0, 19, 0.95)' 
+              : 'rgba(15, 65, 53, 0.95)' 
+          }}
+        >
           <div className="text-center animate-in p-8">
             <div className="text-8xl mb-6">💀</div>
-            <h1 className="text-4xl font-bold text-rose-500 mb-4">پایان بازی</h1>
-            <p className="text-2xl text-amber-400">
+            <h1 className="text-4xl font-bold text-white mb-4">پایان بازی</h1>
+            <p className="text-2xl text-amber-300">
               امتیاز نهایی: {currentScore}
             </p>
-            <p className="text-lg text-slate-400 mt-8">
+            <p className="text-lg text-white/60 mt-8">
               برای بازی مجدد به مانیتور ۰ بروید
             </p>
           </div>
         </div>
       )}
 
-      {/* Mini Stats Overlay (bottom corners) */}
-      <div className="absolute bottom-4 left-4 z-40 flex items-center gap-2">
+      {/* Mini Stats Overlay (bottom corners) - increased padding to avoid cutoff */}
+      <div className="absolute bottom-8 left-8 z-40 flex items-center gap-2">
         <Badge variant="secondary" className="font-mono">
           <Monitor className="w-3 h-3 mr-1" />
           M{monitorId}
         </Badge>
       </div>
 
-      <div className="absolute bottom-4 right-4 z-40 flex items-center gap-2">
+      <div className="absolute bottom-8 right-8 z-40 flex items-center gap-2">
         <Badge
           variant={
             stateRef.current?.timeLeftMs && stateRef.current.timeLeftMs < 30000

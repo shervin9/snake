@@ -74,6 +74,9 @@ interface GlobalState {
   portals: Portal[];
   game: ServerGameState;
   initialized: boolean;
+  // Cache for multiple concurrent requests
+  lastProcessedTime: number;
+  cachedState: ServerGameState | null;
 }
 
 // Use globalThis to persist state across API requests
@@ -131,13 +134,28 @@ function createConfig(fileConfig: FileConfig): GameConfig {
 function generateMonitors(count: number): MonitorConfig[] {
   const monitors: MonitorConfig[] = [];
   const cols = Math.ceil(Math.sqrt(count));
+  
+  // ==========================================================================
+  // تنظیم زاویه مانیتورها
+  // 0 = افقی (landscape)
+  // 90 = عمودی ساعتگرد (portrait clockwise)
+  // 270 = عمودی پادساعتگرد (portrait counter-clockwise)
+  // ==========================================================================
+  const monitorRotations: Record<string, number> = {
+    "0": 0,    // مانیتور ۰ - افقی
+    "1": 90,   // مانیتور ۱ - عمودی
+    "2": 0,    // مانیتور ۲ - افقی
+    "3": 90,   // مانیتور ۳ - عمودی
+    "4": 0,    // مانیتور ۴ - افقی
+    "5": 90,   // مانیتور ۵ - عمودی
+  };
+  
   for (let i = 0; i < count; i++) {
     monitors.push({
       id: String(i),
       row: Math.floor(i / cols),
       col: i % cols,
-      // Alternate between horizontal (0) and vertical (90) for each monitor
-      rotationDeg: i % 2 === 0 ? 0 : 90,
+      rotationDeg: monitorRotations[String(i)] ?? 0,
     });
   }
   return monitors;
@@ -196,6 +214,8 @@ function createInitialState(): GlobalState {
     portals,
     game,
     initialized: true,
+    lastProcessedTime: 0,
+    cachedState: null,
   };
 }
 
@@ -337,7 +357,7 @@ function step(state: GlobalState): void {
     if (dist2 < cell2) {
       game.foods.splice(i, 1);
       game.score += 10;
-      respawnFood(state, f.monitorId);
+      // Food does NOT respawn - fixed count per monitor
       ate = true;
       break;
     }
@@ -479,8 +499,22 @@ export function setDirection(dir: Direction): ServerGameState {
 
 export function getGameState(): ServerGameState {
   const state = getGlobal();
+  const now = Date.now();
+  
+  // Cache state for 25ms to handle multiple concurrent requests efficiently
+  // With 6 monitors at 100ms polling, this ensures most concurrent requests hit cache
+  // 25ms cache = max 4 tick processes per 100ms polling cycle (instead of 6)
+  const CACHE_DURATION_MS = 25;
+  
+  if (state.cachedState && (now - state.lastProcessedTime) < CACHE_DURATION_MS) {
+    return state.cachedState;
+  }
+  
   processTicks(state);
-  return { ...state.game };
+  state.lastProcessedTime = now;
+  state.cachedState = { ...state.game };
+  
+  return state.cachedState;
 }
 
 export function getMonitorsConfig(): MonitorConfig[] {

@@ -5,6 +5,12 @@ import { getGameState, getGameConfig, getMonitorsConfig, setupGame } from "@/lib
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+// Pre-create headers for faster response
+const jsonHeaders = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+};
+
 export async function GET() {
   // Auto-initialize if needed
   let monitors = getMonitorsConfig();
@@ -14,7 +20,21 @@ export async function GET() {
   }
 
   const state = getGameState();
-  const config = getGameConfig();
+  
+  // Only send essential state data to reduce payload size
+  // Config is fetched separately and cached by clients
+  const minimalState = {
+    phase: state.phase,
+    score: state.score,
+    dir: state.dir,
+    snake: state.snake,
+    foods: state.foods,
+    activeMonitorId: state.activeMonitorId,
+    tick: state.tick,
+    timeLeftMs: state.timeLeftMs,
+  };
 
-  return NextResponse.json({ state, config });
+  return new NextResponse(JSON.stringify({ state: minimalState }), {
+    headers: jsonHeaders,
+  });
 }
