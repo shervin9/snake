@@ -355,6 +355,26 @@ export function MonitorCanvas({ monitorId }: { monitorId: string }) {
     return () => window.removeEventListener("keydown", handleKeyToStart);
   }, [monitorId, isIdle, handleStartGame]);
 
+  // Keyboard to restart game (Enter on monitor 0 when ended)
+  useEffect(() => {
+    if (monitorId !== "0") return;
+    
+    const handleKeyToRestart = (e: KeyboardEvent) => {
+      // Only restart if game is ended
+      if (stateRef.current?.phase !== "ended" && !isEnded) return;
+      
+      // Restart on Space, Enter, or any Arrow key
+      if (e.key === " " || e.key === "Enter" || e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        console.log("Restarting game via keyboard:", e.key);
+        handleResetGame();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyToRestart);
+    return () => window.removeEventListener("keydown", handleKeyToRestart);
+  }, [monitorId, isEnded, handleResetGame]);
+
   // PIXI.js setup and render loop
   useEffect(() => {
     if (!containerRef.current || !config) return;

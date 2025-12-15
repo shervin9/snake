@@ -1,0 +1,186 @@
+# ESPHome configuration for Snake Game Controller
+# Board: D1 Mini Pro (ESP8266)
+# 4 Direction buttons for controlling the snake
+
+esphome:
+  name: snake-controller
+  friendly_name: Snake Game Controller
+  platform: ESP8266
+  board: d1_mini_pro
+
+# WiFi Configuration - Update these values!
+wifi:
+  ssid: "MobinNet3806-2"        # نام وای‌فای خود را اینجا وارد کنید
+  password: "QEFF0HRMDB9" # رمز وای‌فای خود را اینجا وارد کنید
+  
+  # Optional: Static IP for faster connection
+  # manual_ip:
+  #   static_ip: 192.168.1.100
+  #   gateway: 192.168.1.1
+  #   subnet: 255.255.255.0
+
+  # If WiFi connection fails, create a hotspot for configuration
+  ap:
+    ssid: "Snake-Controller"
+    password: "snakegame123"
+
+# Enable captive portal for easy WiFi setup
+captive_portal:
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API (optional)
+# api:
+#   encryption:
+#     key: "your-key-here"
+
+# Enable OTA updates
+ota:
+  platform: esphome
+  password: "snake-ota-password"
+
+# HTTP Request component for sending directions to game server
+http_request:
+  useragent: esphome/snake-controller
+  timeout: 2s
+
+# Game Server Configuration
+# آدرس سرور بازی را اینجا وارد کنید (Mac, Windows, Linux - فرقی نداره)
+substitutions:
+  game_server: "http://192.168.1.122:3000"  # مثال: http://192.168.1.50:3000
+
+# Status LED (built-in LED on D4/GPIO2)
+status_led:
+  pin:
+    number: GPIO2
+    inverted: true
+
+# Button Configuration
+# دکمه‌های 4 پایه معمولاً 2 پایه وصل به هم دارند
+# فقط یک پایه از هر طرف استفاده کنید (2 پایه از 4 تا)
+#
+# Wiring:
+# ┌─────────────────────────────────────────┐
+# │  D1 Mini Pro                            │
+# │                                         │
+# │  3V3 ─────┬────┬────┬────┬───────       │
+# │           │    │    │    │              │
+# │          [↑]  [↓]  [←]  [→]  (buttons)  │
+# │           │    │    │    │              │
+# │  D1 ──────┘    │    │    │              │
+# │  D2 ───────────┘    │    │              │
+# │  D5 ────────────────┘    │              │
+# │  D6 ─────────────────────┘              │
+# │                                         │
+# │  GND ──── (not needed with pull-up)     │
+# └─────────────────────────────────────────┘
+
+binary_sensor:
+  # UP Button - D1 (GPIO5)
+  - platform: gpio
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Up Button"
+    id: btn_up
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      then:
+        - logger.log: "UP pressed"
+        - http_request.post:
+            url: "${game_server}/api/state/input"
+            headers:
+              Content-Type: "application/json"
+            json: |-
+              root["direction"] = "up";
+
+  # DOWN Button - D2 (GPIO4)
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Down Button"
+    id: btn_down
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      then:
+        - logger.log: "DOWN pressed"
+        - http_request.post:
+            url: "${game_server}/api/state/input"
+            headers:
+              Content-Type: "application/json"
+            json: |-
+              root["direction"] = "down";
+
+  # LEFT Button - D5 (GPIO14)
+  - platform: gpio
+    pin:
+      number: GPIO14
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Left Button"
+    id: btn_left
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      then:
+        - logger.log: "LEFT pressed"
+        - http_request.post:
+            url: "${game_server}/api/state/input"
+            headers:
+              Content-Type: "application/json"
+            json: |-
+              root["direction"] = "left";
+            on_response:
+              - logger.log:
+                  format: "Response: %d"
+                  args: ["response_code"]
+
+  # RIGHT Button - D6 (GPIO12)
+  - platform: gpio
+    pin:
+      number: GPIO12
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Right Button"
+    id: btn_right
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      then:
+        - logger.log: "RIGHT pressed"
+        - http_request.post:
+            url: "${game_server}/api/state/input"
+            headers:
+              Content-Type: "application/json"
+            json: |-
+              root["direction"] = "right";
+            on_response:
+              - logger.log:
+                  format: "Response: %d"
+                  args: ["response_code"]
+
+# WiFi Signal Sensor (optional - for debugging)
+sensor:
+  - platform: wifi_signal
+    name: "Controller WiFi Signal"
+    update_interval: 60s
+
+# Uptime sensor (optional)
+  - platform: uptime
+    name: "Controller Uptime"
+
+# Restart button (optional - useful for debugging)
+button:
+  - platform: restart
+    name: "Restart Controller"
